@@ -2,7 +2,8 @@
 name = "libre-devops-helpers"
 version = "0.4.0"
 description = "Libre DevOps Helpers: a fast, read-only CLI and importable helpers for Entra ID, Defender XDR, Intune, Azure, Graph, PIM, Logic Apps and ServiceNow, also shipped as a container image."
-readme = "README.md"
+# The README, for PyPI with its relative links made absolute; see fancy-pypi-readme below.
+dynamic = ["readme"]
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Craig Thacker" }]
@@ -16,7 +17,11 @@ keywords = [
     "intune",
     "key-vault",
     "log-analytics",
+    "logic-apps",
     "microsoft-graph",
+    "microsoft-sentinel",
+    "pim",
+    "servicenow",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -46,8 +51,9 @@ keychain = ["keyring>=25"]
 
 [project.urls]
 Homepage = "https://github.com/libre-devops/python-helpers"
+Documentation = "https://github.com/libre-devops/python-helpers/tree/main/docs"
+Changelog = "https://github.com/libre-devops/python-helpers/blob/main/CHANGELOG.md"
 Issues = "https://github.com/libre-devops/python-helpers/issues"
-Documentation = "https://libredevops.org"
 
 [project.scripts]
 ldo = "libre_devops_helpers.cli:main"
@@ -63,8 +69,21 @@ dev = [
 ]
 
 [build-system]
-requires = ["hatchling>=1.26"]
+requires = ["hatchling>=1.26", "hatch-fancy-pypi-readme>=24"]
 build-backend = "hatchling.build"
+
+# PyPI shows the README away from the repository, where its relative links (docs/,
+# LICENSE) would lead nowhere, so the copy PyPI gets points them at GitHub. The README
+# in the repository keeps its relative links, which a test checks resolve.
+[tool.hatch.metadata.hooks.fancy-pypi-readme]
+content-type = "text/markdown"
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.fragments]]
+path = "README.md"
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
+pattern = '\]\((?![a-z]+:|#)([^)\s]+)\)'
+replacement = '](https://github.com/libre-devops/python-helpers/blob/main/\1)'
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/libre_devops_helpers"]

@@ -71,3 +71,32 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: gh release create "${TAG}" dist/* --verify-tag --generate-notes --title "${TAG}"
+
+  # PyPI, through trusted publishing: PyPI trusts this workflow running in the pypi
+  # environment, so no token is stored anywhere. It runs last because a version on PyPI
+  # can never be replaced, and stays off until the repository variable PUBLISH_PYPI is
+  # "true", since PyPI must know the publisher first (see docs/development.md).
+  pypi:
+    name: Publish to PyPI
+    needs: [release]
+    if: vars.PUBLISH_PYPI == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: pypi
+      url: https://pypi.org/p/libre-devops-helpers
+    permissions:
+      # The OIDC token PyPI exchanges for a short-lived upload token, and that signs the
+      # upload's provenance attestations.
+      id-token: write
+
+    steps:
+      # The files the gate built and tested, as the GitHub release has them.
+      - name: Fetch the build
+        uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2

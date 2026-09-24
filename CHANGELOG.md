@@ -3,6 +3,19 @@
 All notable changes to libre-devops-helpers are recorded here. The project follows
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- Releases can publish to PyPI through trusted publishing, once the repository variable
+  `PUBLISH_PYPI` is `true`: the same wheel and sdist, last, after the images and the GitHub
+  release. The README PyPI shows has its relative links pointed at GitHub.
+
+### Changed
+
+- The package metadata links to the docs and the changelog, and its keywords name
+  Graph, Sentinel, PIM, Logic Apps and ServiceNow.
+
 ## 0.4.0
 
 ### Added

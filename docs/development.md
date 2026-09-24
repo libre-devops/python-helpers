@@ -54,6 +54,21 @@ The release workflow runs CI again as a gate, builds, scans and pushes both imag
 attestations, and only then creates the GitHub release with the wheel, sdist and
 `SHA256SUMS`. A release never exists without its images.
 
+Last, when the repository variable `PUBLISH_PYPI` is `true`, it publishes the same wheel and
+sdist to PyPI through [trusted publishing](https://docs.pypi.org/trusted-publishers/): PyPI
+trusts `release.yml` running in the `pypi` environment, so no token is stored anywhere, and
+the upload carries signed provenance. A version on PyPI can never be replaced, which is why
+it goes last. To set it up once:
+
+1. On pypi.org, add a trusted (pending, before the first upload) publisher: project
+   `libre-devops-helpers`, owner `libre-devops`, repository `python-helpers`, workflow
+   `release.yml`, environment `pypi`.
+2. In the repository's settings, create the `pypi` environment, limited to `v*` tags.
+3. `gh variable set PUBLISH_PYPI --body true`, then release as usual.
+
+PyPI gets the README with its relative links pointed at GitHub (the `fancy-pypi-readme`
+build hook in `pyproject.toml`); a test checks each lands on a file.
+
 ## Patching
 
 Updates reach the images three ways:

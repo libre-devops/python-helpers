@@ -124,3 +124,21 @@ def test_install_lines_name_the_current_release():
         for found in re.findall(r"install [^\n]*@v(\d+\.\d+\.\d+)", page.read_text())
     }
     assert pinned == {version}
+
+
+def test_the_readme_pypi_gets_links_to_files_that_exist():
+    # PyPI shows the README away from the repository, so the build rewrites its relative
+    # links to GitHub ones (pyproject.toml, fancy-pypi-readme). Each must land on a file.
+    hook = tomllib.loads((ROOT / "pyproject.toml").read_text())["tool"]["hatch"]["metadata"]
+    rule = hook["hooks"]["fancy-pypi-readme"]["substitutions"][0]
+    pypi = re.sub(rule["pattern"], rule["replacement"], (ROOT / "README.md").read_text())
+    prefix = rule["replacement"].removeprefix("](").split("\\1")[0]
+    links = re.findall(r"\]\(([^)\s]+)\)", pypi)
+    assert not [link for link in links if not re.match(r"[a-z]+:", link)], "relative links left"
+    ours = [link.removeprefix(prefix) for link in links if link.startswith(prefix)]
+    assert len(ours) > 10
+    for target in ours:
+        path, _, anchor = target.partition("#")
+        assert (ROOT / path).exists(), target
+        if anchor:
+            assert anchor in anchors(ROOT / path), target
