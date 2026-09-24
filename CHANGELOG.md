@@ -3,6 +3,26 @@
 All notable changes to libre-devops-helpers are recorded here. The project follows
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Changed
+
+- The README is a short front page: what `ldo` does, a table of every command group, install,
+  a quickstart and links. The detail moved to `docs/`, one page per area, with its prose cut
+  down, and `ldo --help` links there.
+- Hints that said "see the README" link to the page they mean.
+- The justfile groups its recipes, drops the ones that only wrapped `just run` (`use`,
+  `token`, `config-init`, `check-devices`, `watch-devices`), and adds `audit`, `secrets`,
+  `build`, `lock`, `ci` (everything CI checks) and `release` (checks, then tags and pushes).
+- The descriptions in `ldo --help`, the package metadata and the image labels name what the
+  tool now covers.
+
+### Added
+
+- A test runs every `ldo` example in the README and docs with `--help`, checks every `just`
+  example is a recipe, follows every link and anchor, and keeps the pinned install version
+  in step with the release.
+
 ## 0.2.1
 
 ### Fixed

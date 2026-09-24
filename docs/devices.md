@@ -1,0 +1,50 @@
+# Devices
+
+[Back to the docs](README.md)
+
+Devices across Entra ID, Defender and Intune, by name. A name can be an FQDN or a short
+hostname: each lookup tries the FQDN, then the short name. `ldo device` works as well as
+`ldo devices`.
+
+```bash
+ldo devices check web01,web02,db01                  # in Entra and onboarded to Defender?
+ldo devices check -f plan.xlsx --column FQDN --sheet "Ring 1" --tag linux-servers
+ldo devices check -f hosts.txt --group "MDE Pilot Devices" --intune --compliant
+ldo devices watch -f hosts.txt --interval 5m --timeout 2h
+ldo devices show web01.corp.example.com             # one device, and what looks wrong
+ldo devices av-signature web01,db01                 # Defender Antivirus versions
+ldo devices av-signature -f plan.xlsx --column FQDN --at-least 1.419.120.0
+```
+
+## check and watch
+
+`check` is one fast pass over the list, looking devices up in parallel (`--workers`, default
+8). `watch` repeats it every `--interval` until every device meets every expectation, or
+`--timeout` or `--max-passes` stops it; devices already complete are skipped unless you pass
+`--recheck`. Progress goes to stderr, the final table to stdout. Both exit 3 when a device
+falls short, and `watch` 130 on Ctrl-C.
+
+| Expectation | Meaning |
+| --- | --- |
+| `--entra` / `--no-entra` | in Entra ID (on by default) |
+| `--defender` / `--no-defender` | onboarded to Defender (on by default) |
+| `--active` | Defender health is Active |
+| `--tag NAME` | carries this Defender machine tag (repeatable) |
+| `--group NAME` | a member of this Entra group (repeatable) |
+| `--intune`, `--compliant` | enrolled in Intune, and compliant |
+
+## show
+
+One device's Entra objects and groups, Defender record and (with `--intune`) Intune record,
+side by side, with what looks wrong: duplicate registrations, a disabled object, Defender not
+onboarded, inactive or not seen for `--stale-after` (default 7d), or Defender or Intune
+pointing at a different Entra device. Exits 3 on any warning.
+
+## av-signature
+
+Each device's Defender Antivirus signature, engine and platform versions, its mode (active,
+passive or EDR block) and Defender's own "definitions up to date" check, from one built-in
+Advanced Hunting query. It runs through Graph, or with `--endpoint` through the Defender for
+Endpoint API, which the Azure CLI's sign-in can use. `--at-least` flags older signatures, and
+`--show-query` prints the KQL to paste into the portal instead. Exits 3 when a device is not
+found, is out of date, or is older than `--at-least`.

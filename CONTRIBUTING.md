@@ -9,7 +9,8 @@ command or improving the documentation.
 2. Run `just sync` (or `uv sync`) to create the environment.
 3. Make your change, with tests.
 4. Run `just check`. It must pass: ruff lint, ruff format check, and the tests with
-   coverage at or above the floor in `pyproject.toml`.
+   coverage at or above the floor in `pyproject.toml`. `just ci` runs everything else CI
+   checks too: Python 3.11, the dependency audit and the build.
 5. Open a pull request using the template. CI then also scans every commit for secrets
    (gitleaks), audits the locked dependencies (pip-audit), runs the tests on Python 3.11 to
    3.14 and on Windows and macOS, measures coverage, builds the wheel, and builds, runs
@@ -74,8 +75,10 @@ are the general reference. The rules that matter most here:
 15. The container images must keep working as an unprivileged user with a read-only
     `/work`. `just image`, `just image-slim` and `just image-scan` run what CI runs.
 
-When you add a command, option or exit code, update `README.md` and `CHANGELOG.md` in the same
-pull request.
+When you add a command, option or exit code, document it on its page in `docs/` (and in the
+README's command table for a new group), and in `CHANGELOG.md`, in the same pull request. A
+test runs every example in the docs with `--help` and follows every link, so a renamed
+command or option shows up there.
 
 ## Licence
 

@@ -13,6 +13,7 @@ COMMAND = "ldo"
 DISTRIBUTION = "libre-devops-helpers"
 ENV_PREFIX = "LDO"
 CONFIG_DIR = "ldo"
+REPOSITORY = "https://github.com/libre-devops/python-helpers"
 
 # The welcome banner, drawn after the Libre DevOps unicorn. Plain ASCII, so it renders in
 # any terminal and font. 'just rebrand --banner FILE' swaps it; --no-banner empties it.
@@ -53,6 +54,11 @@ def env_var(name: str) -> str:
 def command(text: str) -> str:
     """A command line to suggest to the person, e.g. ``'ldo config init'``, quoted."""
     return f"'{COMMAND} {text}'"
+
+
+def docs(page: str) -> str:
+    """The web address of a page in docs/, for a hint, e.g. ``docs("servicenow")``."""
+    return f"{REPOSITORY}/blob/main/docs/{page}.md"
 
 
 CONFIG_ENV = env_var("CONFIG")

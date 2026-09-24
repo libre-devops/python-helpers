@@ -160,7 +160,7 @@ class ServiceNowRuntime:
                 f"set {CLIENT_ID_ENV} to the application registry entry's client id "
                 f"(and {CLIENT_SECRET_ENV}, or let sign-in ask for it)"
             )
-        return 'set auth = "oauth" and a client_id on the profile (see the README)'
+        return f'set auth = "oauth" and a client_id on the profile (see {brand.docs("servicenow")})'
 
     @staticmethod
     def _setup_hint() -> str:

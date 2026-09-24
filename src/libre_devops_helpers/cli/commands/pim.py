@@ -86,7 +86,8 @@ def _hint(area: Area, text: str) -> str | None:
     if area != "azure" and ("PermissionScopeNotGranted" in text or "HTTP 403" in text):
         return (
             "these views need a token with the PIM scopes; the Azure CLI's never has them. Use a "
-            'profile with auth = "interactive" or "device-code" (see the README)'
+            'profile with auth = "interactive" or "device-code" '
+            f"(see {brand.docs('authentication')})"
         )
     return None
 

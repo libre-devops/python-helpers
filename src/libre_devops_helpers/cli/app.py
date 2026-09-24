@@ -39,8 +39,9 @@ from libre_devops_helpers.core.log import LOG_FORMATS, configure_logging
 
 app = typer.Typer(
     name=brand.COMMAND,
-    help=f"{brand.DISPLAY_NAME}: fast, read-only helpers for Azure, Entra ID, Defender, "
-    "Intune, Key Vault and Log Analytics.",
+    help=f"{brand.DISPLAY_NAME}: fast, read-only helpers for Entra ID, Defender XDR, Intune, "
+    "Azure, Graph, PIM, Logic Apps and ServiceNow. Signs in as you. "
+    f"Docs: {brand.docs('README')}",
     pretty_exceptions_enable=False,
     context_settings={"help_option_names": ["-h", "--help"]},
 )

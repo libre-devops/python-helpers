@@ -27,7 +27,7 @@ from libre_devops_helpers.core.util import is_guid
 
 CONFIG_HEADER = f"""\
 # {brand.DISPLAY_NAME} ({brand.COMMAND}) configuration. Each vendor has its own section;
-# see the README for every key.
+# every key is described in {brand.docs("configuration")}
 #
 # Optional PEM bundle for a TLS-inspecting proxy, used for every HTTPS call. Without it,
 # SSL_CERT_FILE or the bundled CA list is used.
