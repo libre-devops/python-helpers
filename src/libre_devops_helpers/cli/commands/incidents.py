@@ -26,6 +26,7 @@ from libre_devops_helpers.microsoft.incidents import (
 )
 
 incidents_app = typer.Typer(
+    rich_markup_mode="markdown",
     name="incidents",
     help="Defender XDR incidents, Sentinel's included: top, latest, list, summary, show.",
     no_args_is_help=True,

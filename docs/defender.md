@@ -5,7 +5,7 @@
 ## Machines, alerts and vulnerabilities
 
 ```bash
-ldo xdr machines web01 web02 --all-records      # onboarding, health, last seen, tags
+ldo xdr machines web01 web02 --all-records      # onboarding, health, last seen, tags, device group
 ldo xdr stale --older-than 30d                  # machines Defender has not seen lately
 ldo xdr alerts --since 24h --severity medium
 ldo xdr alerts --device web01 --include-resolved

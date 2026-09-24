@@ -16,7 +16,9 @@ from libre_devops_helpers.servicenow.config import CONFIG_TEMPLATE as SERVICENOW
 # The file 'config init' writes: shared settings, then each vendor's section.
 TEMPLATE = "\n".join([CONFIG_HEADER, MICROSOFT_TEMPLATE, SERVICENOW_TEMPLATE])
 
-config_app = typer.Typer(help="Create or locate the config file.", no_args_is_help=True)
+config_app = typer.Typer(
+    rich_markup_mode="markdown", help="Create or locate the config file.", no_args_is_help=True
+)
 
 
 def register(app: typer.Typer) -> None:

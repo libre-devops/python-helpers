@@ -26,6 +26,7 @@ from libre_devops_helpers.microsoft.pim import AREAS, Area, PimAssignment, PimRe
 T = TypeVar("T")
 
 pim_app = typer.Typer(
+    rich_markup_mode="markdown",
     help="Privileged Identity Management: eligible and active roles, requests, approvals.",
     no_args_is_help=True,
 )
@@ -318,7 +319,8 @@ def settings(
     scope: Annotated[
         str | None,
         typer.Option(
-            "--scope", help="An Azure scope, e.g. /subscriptions/<id>, for an Azure role."
+            "--scope",
+            help="An Azure scope, e.g. /subscriptions/SUBSCRIPTION_ID, for an Azure role.",
         ),
     ] = None,
     group: Annotated[

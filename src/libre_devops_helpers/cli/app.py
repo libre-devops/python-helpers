@@ -14,6 +14,7 @@ import typer
 from libre_devops_helpers import __version__
 from libre_devops_helpers.cli import render
 from libre_devops_helpers.cli.commands import (
+    automation,
     az,
     azure,
     config,
@@ -26,6 +27,7 @@ from libre_devops_helpers.cli.commands import (
     logicapp,
     logs,
     pim,
+    pretty,
     profiles,
     snow,
     token,
@@ -35,9 +37,10 @@ from libre_devops_helpers.cli.commands import (
 from libre_devops_helpers.cli.runtime import Runtime
 from libre_devops_helpers.core import brand
 from libre_devops_helpers.core.errors import LdoError
-from libre_devops_helpers.core.log import LOG_FORMATS, configure_logging
+from libre_devops_helpers.core.log import LOG_FORMATS, configure_logging, normalise_format
 
 app = typer.Typer(
+    rich_markup_mode="markdown",
     name=brand.COMMAND,
     help=f"{brand.DISPLAY_NAME}: fast, read-only helpers for Entra ID, Defender XDR, Intune, "
     "Azure, Graph, PIM, Logic Apps and ServiceNow. Signs in as you. "
@@ -94,6 +97,7 @@ def _root(
     ] = False,
 ) -> None:
     configure_logging(verbose, log_format, log_level)
+    render.structured_output(normalise_format(log_format) != "text")
     # Tests pass a prepared Runtime as obj; a real run builds one here.
     if not isinstance(ctx.obj, Runtime):
         ctx.obj = Runtime(config_path=config_path)
@@ -123,12 +127,15 @@ for _module in (
     pim,
     devices,
     snow,
+    pretty,
 ):
     _module.register(app)
 # Token commands are about Entra-issued tokens, so they live in the entra group.
 token.register(entra.entra_app)
 # Incidents are Defender XDR's (Sentinel's included), so they live in the xdr group.
 incidents.register(xdr.xdr_app)
+# Automation accounts are Azure resources, so they live in the azure group.
+automation.register(azure.azure_app)
 
 
 def main() -> None:
@@ -136,7 +143,5 @@ def main() -> None:
     try:
         app()
     except LdoError as exc:
-        typer.secho(f"error: {exc}", fg="red", err=True)
-        if exc.hint:
-            typer.secho(f"hint: {exc.hint}", fg="yellow", err=True)
+        render.error(str(exc), exc.hint)
         sys.exit(exc.exit_code)

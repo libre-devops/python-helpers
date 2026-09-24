@@ -106,7 +106,7 @@ def token(
     ok = passed(checks, strict=strict)
     if raw:
         if not ok:
-            render.echo(render.checks_table(checks), err=True)
+            render.checks_to_stderr(checks)
             raise typer.Exit(ERROR)
         render.echo(access.token)
         return

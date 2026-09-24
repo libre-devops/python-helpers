@@ -75,6 +75,86 @@ cat hosts.txt | ldo xdr machines -
 **Queries** (`xdr hunt`, `graph hunt`, `azure resource-graph`, `logs query`) come from the
 argument, `--file`, or stdin.
 
+## JSON, YAML and logs
+
+`-o json` is indented, and coloured on a terminal: keys, strings, numbers and booleans each
+have a colour, and brackets take the banner's rainbow by how deeply they nest, so a pair
+shares one. Piped into `jq` or a file, it is plain JSON. `NO_COLOR` turns the colour off.
+
+`ldo json` does the same for JSON from anywhere else, from stdin or a file, and reads JSON
+Lines (one document per line) too:
+
+```bash
+az rest --url "https://graph.microsoft.com/v1.0/me" | ldo json
+ldo json response.json --sort-keys
+ldo graph get me -o json | ldo json --yaml       # as YAML
+ldo json events.jsonl --compact                  # one line each
+ldo json big.json --colour | less -R             # keep the colour through a pager
+```
+
+`--yaml` writes YAML, quoting any string a YAML reader could take for something else (`yes`,
+`no`, `null`, `1.0`, `2026-09-24`, `@odata.context`), and writing multi-line strings as `|`
+blocks. It needs nothing beyond the standard library. It only converts from JSON; there is
+no YAML to JSON.
+
+## OpenTelemetry logs
+
+Logs go to stderr, so they never mix with data. `-v` and `-vv` turn them on as text.
+`--log-format otlp` (or `LDO_LOG_FORMAT=otlp`) writes OpenTelemetry instead, in the
+[OTLP file format](https://opentelemetry.io/docs/specs/otel/protocol/file-exporter/): JSON
+Lines, each line a complete OTLP/JSON `LogsData` holding one record, as `Write-LdoLog` writes
+in LibreDevOpsHelpers. In that mode stderr holds nothing else: the notes, warnings and errors
+`ldo` would print become records too (notes at INFO, so `LDO_LOG_LEVEL=info` to keep them),
+and an error's hint is an attribute.
+
+```bash
+LDO_LOG_FORMAT=otlp LDO_LOG_LEVEL=info ldo devices check -f hosts.txt 2>> /var/log/ldo/ldo.jsonl
+```
+
+| Variable | Becomes |
+| --- | --- |
+| `LDO_SERVICE_NAME`, else `OTEL_SERVICE_NAME` | the resource's `service.name` (default `ldo`) |
+| `LDO_SERVICE_VERSION` | `service.version` (default the tool's version) |
+| `LDO_DEPLOYMENT_ENVIRONMENT` | `deployment.environment.name` |
+| `OTEL_RESOURCE_ATTRIBUTES` | more resource attributes, `key=value,key=value` |
+| `LDO_TRACE_ID`, `LDO_SPAN_ID` | every record's `traceId` and `spanId`, so one run's logs join a trace |
+| `LDO_CORRELATION_ID` | a `correlation_id` attribute, and the `traceId` when it is a GUID and no trace id is set |
+
+An id that is not hex of the right width (dashes are dropped, so a GUID makes a trace id) is
+left out, never sent: a collector rejects a whole payload with a bad one. Records carry
+`code.function.name` and `code.line.number`, and a failure's `exception.type`,
+`exception.message` and `exception.stacktrace`.
+
+An OpenTelemetry Collector reads the file with the `otlp_json_file` receiver. From a
+container, whose stdout and stderr the runtime writes to its own log files, read those with
+`file_log` and turn our lines back into records with the `otlp_json` connector; it skips
+the lines that are not OTLP, such as a table on stdout. Both are tested against Collector
+0.161, which also accepts the older names `otlpjsonfile`, `filelog` and `otlpjson`, with a
+warning.
+
+```yaml
+receivers:
+  otlp_json_file:
+    include: [/var/log/ldo/*.jsonl]
+  file_log/containers:
+    include: [/var/log/pods/*/ldo/*.log]    # the container named ldo, in any pod
+    operators:
+      - type: container          # unwrap the runtime's log format, add the pod's metadata
+connectors:
+  otlp_json:
+exporters:
+  otlp:
+    endpoint: otel-backend.example.com:4317
+service:
+  pipelines:
+    logs:
+      receivers: [otlp_json_file, otlp_json]
+      exporters: [otlp]
+    logs/containers:
+      receivers: [file_log/containers]
+      exporters: [otlp_json]
+```
+
 ## Environment variables
 
 | Variable | Meaning |
@@ -82,6 +162,7 @@ argument, `--file`, or stdin.
 | `LDO_CONFIG` | The config file. |
 | `LDO_PROFILE` | The profile, as `--profile`. |
 | `LDO_LOG_FORMAT`, `LDO_LOG_LEVEL` | As `--log-format` and `--log-level`. They mean the same for `Write-LdoLog` in LibreDevOpsHelpers, so one pipeline setting drives both. |
+| `LDO_SERVICE_NAME`, `LDO_TRACE_ID` and the rest | What OTLP logs say about themselves; see [OpenTelemetry logs](#opentelemetry-logs). |
 | `LDO_REAUTH` | When the Azure CLI's sign-in lapses on a terminal: unset asks to sign in again in a browser, `device-code` asks and uses a device code, `off` never asks. |
 | `LDO_TOKEN_CACHE` | Another file for kept sign-ins, e.g. a container volume. |
 | `LDO_NO_BANNER`, `NO_COLOR` | No banner; no colour. The banner only ever shows on a terminal. |

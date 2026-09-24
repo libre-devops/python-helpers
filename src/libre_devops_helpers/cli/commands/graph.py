@@ -30,6 +30,7 @@ from libre_devops_helpers.microsoft.resources import resolve_resource
 from libre_devops_helpers.microsoft.tokens import decode_token
 
 graph_app = typer.Typer(
+    rich_markup_mode="markdown",
     name="graph",
     help="Microsoft Graph: whoami, a token, any GET, objects by name, and hunting.",
     no_args_is_help=True,

@@ -26,6 +26,7 @@ from libre_devops_helpers.core.util import format_duration
 from libre_devops_helpers.microsoft.xdr import Machine, MachineLookup, parse_severity
 
 xdr_app = typer.Typer(
+    rich_markup_mode="markdown",
     help=(
         "Defender XDR: incidents (Sentinel's included), and Defender for Endpoint "
         "machines, alerts, vulnerabilities and hunting."
@@ -53,7 +54,7 @@ def machines(
     ] = False,
     output: OutputOption = Output.TABLE,
 ) -> None:
-    """Look devices up in Defender: onboarding, health, last seen and tags.
+    """Look devices up in Defender: onboarding, health, last seen, tags and device group.
 
     Each device is looked up by FQDN, then by short hostname. Exits 3 when any device
     has no Defender record.
@@ -72,6 +73,7 @@ def machines(
             "LAST SEEN",
             "OS",
             "TAGS",
+            "DEVICE GROUP",
             "RECORDS",
             "MACHINE ID",
         ],
@@ -99,7 +101,7 @@ def _machine_rows(lookups: list[MachineLookup], *, all_records: bool) -> list[li
     rows: list[list[render.Cell]] = []
     for lookup in lookups:
         if lookup.machine is None:
-            rows.append([lookup.query, ("not found", "red"), "", "", "", "", "", "0", ""])
+            rows.append([lookup.query, ("not found", "red"), "", "", "", "", "", "", "0", ""])
             continue
         matched = "fqdn" if lookup.matched_name == lookup.query.strip().rstrip(".") else "short"
         rows.append(
@@ -128,6 +130,7 @@ def _machine_cells(machine: Machine) -> list[render.Cell]:
         render.when(machine.last_seen),
         f"{machine.os_platform} {machine.os_version}".strip(),
         ",".join(machine.machine_tags),
+        machine.device_group,
     ]
 
 

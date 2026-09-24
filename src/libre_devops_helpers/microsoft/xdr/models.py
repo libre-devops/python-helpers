@@ -28,6 +28,9 @@ class Machine:
     exposure_level: str
     last_ip_address: str
     aad_device_id: str
+    # The Defender device group (set up under Settings > Endpoints > Device groups) the
+    # machine falls in; "UnassignedGroup" when it matches none.
+    device_group: str
     raw: Mapping[str, Any] = field(default_factory=dict, compare=False, repr=False)
 
     @classmethod
@@ -48,6 +51,7 @@ class Machine:
             exposure_level=str(data.get("exposureLevel") or ""),
             last_ip_address=str(data.get("lastIpAddress") or ""),
             aad_device_id=str(data.get("aadDeviceId") or ""),
+            device_group=str(data.get("rbacGroupName") or ""),
             raw=dict(data),
         )
 

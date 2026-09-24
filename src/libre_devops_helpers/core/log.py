@@ -4,20 +4,29 @@ Library modules only call ``logging.getLogger(__name__)``; they never configure
 handlers. The CLI calls ``configure_logging`` once. Logs go to stderr so they never mix
 with data written to stdout.
 
-``otlp`` writes one complete OTLP/JSON ``ExportLogsServiceRequest`` per line, the same
-shape ``Write-LdoLog`` emits in LibreDevOpsHelpers, so a collector's ``otlpjsonfile``
-receiver reads either tool's logs without any parsing rules. The two tools also read the
-same ``LDO_LOG_FORMAT`` and ``LDO_LOG_LEVEL`` variables, so one pipeline setting controls
-both. One difference is deliberate: with nothing set, this CLI writes readable text.
+``otlp`` writes the OpenTelemetry file format: JSON Lines, each line a complete OTLP/JSON
+``LogsData`` (the same object an ``ExportLogsServiceRequest`` is) holding one record, as
+``Write-LdoLog`` does in LibreDevOpsHelpers. An OpenTelemetry Collector reads it with the
+``otlp_json_file`` receiver, or, from a container's logs, with the ``file_log`` receiver
+and the ``otlp_json`` connector, with no parsing rules either way. The two tools read the
+same variables (``LDO_LOG_FORMAT``, ``LDO_LOG_LEVEL``, ``LDO_SERVICE_NAME`` and the trace
+context), so one pipeline setting controls both. One difference is deliberate: with
+nothing set, this CLI writes readable text.
+
+https://opentelemetry.io/docs/specs/otel/protocol/file-exporter/
+https://opentelemetry.io/docs/specs/otlp/#json-protobuf-encoding
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import os
 import sys
 import traceback
+from collections.abc import Mapping
 from typing import Any
+from urllib.parse import unquote
 
 from libre_devops_helpers import __version__
 from libre_devops_helpers.core import brand
@@ -58,33 +67,55 @@ class JsonFormatter(logging.Formatter):
             "logger": record.name,
             "message": record.getMessage(),
         }
+        if getattr(record, "hint", None):
+            data["hint"] = record.hint
         if record.exc_info:
             data["exception"] = self.formatException(record.exc_info)
         return json.dumps(data)
 
 
 class OtlpFormatter(logging.Formatter):
-    """One OTLP/JSON ``ExportLogsServiceRequest`` per record.
+    """One OTLP/JSON ``LogsData`` per record, on one line.
 
-    OTLP's JSON rules differ from plain proto3 JSON: 64-bit integers such as timestamps
-    are strings, ``severityNumber`` is the integer, and attribute values are typed.
+    OTLP's JSON rules differ from plain proto3 JSON: 64-bit integers such as timestamps are
+    strings, ``severityNumber`` is the integer, ``traceId`` and ``spanId`` are lowercase
+    hex, and attribute values are typed. Attribute names follow the semantic conventions.
+
+    The resource describes what is logging: ``service.name`` (``LDO_SERVICE_NAME``, else
+    ``OTEL_SERVICE_NAME``, else the command), ``service.version`` and, with
+    ``LDO_DEPLOYMENT_ENVIRONMENT``, ``deployment.environment.name``; anything else comes
+    from ``OTEL_RESOURCE_ATTRIBUTES``. ``LDO_TRACE_ID``, ``LDO_SPAN_ID`` and
+    ``LDO_CORRELATION_ID`` put every record in a trace, so a CI run's logs join up; an id
+    that is not valid hex of the right width is left out rather than sent and rejected.
     """
 
-    def __init__(self, service_name: str = SERVICE_NAME, service_version: str = __version__):
+    def __init__(
+        self,
+        service_name: str | None = None,
+        service_version: str | None = None,
+        *,
+        environ: Mapping[str, str] | None = None,
+    ):
         super().__init__()
-        self._resource = {
-            "attributes": [
-                _attribute("service.name", service_name),
-                _attribute("service.version", service_version),
-            ]
-        }
+        env = os.environ if environ is None else environ
+        self._resource = {"attributes": _resource_attributes(env, service_name, service_version)}
+        correlation = (env.get(brand.env_var("CORRELATION_ID")) or "").strip()
+        self._correlation_id = correlation
+        self._trace_id = otlp_hex_id(env.get(brand.env_var("TRACE_ID")), 32) or otlp_hex_id(
+            correlation, 32
+        )
+        self._span_id = otlp_hex_id(env.get(brand.env_var("SPAN_ID")), 16)
 
     def format(self, record: logging.LogRecord) -> str:
         nanos = str(int(record.created * 1_000_000_000))
         attributes = [
-            _attribute("code.function", record.funcName),
-            _attribute("code.lineno", record.lineno),
+            _attribute("code.function.name", f"{record.name}.{record.funcName}"),
+            _attribute("code.line.number", record.lineno),
         ]
+        if self._correlation_id:
+            attributes.append(_attribute("correlation_id", self._correlation_id))
+        if getattr(record, "hint", None):
+            attributes.append(_attribute("hint", str(record.hint)))
         if record.exc_info and record.exc_info[0] is not None:
             error_type, error, trace = record.exc_info
             attributes += [
@@ -95,7 +126,7 @@ class OtlpFormatter(logging.Formatter):
                     "".join(traceback.format_exception(error_type, error, trace)),
                 ),
             ]
-        log_record = {
+        log_record: dict[str, Any] = {
             "timeUnixNano": nanos,
             "observedTimeUnixNano": nanos,
             "severityNumber": _SEVERITY.get(record.levelno, 9),
@@ -103,6 +134,10 @@ class OtlpFormatter(logging.Formatter):
             "body": {"stringValue": record.getMessage()},
             "attributes": attributes,
         }
+        if self._trace_id:
+            log_record["traceId"] = self._trace_id
+        if self._span_id:
+            log_record["spanId"] = self._span_id
         request = {
             "resourceLogs": [
                 {
@@ -112,6 +147,57 @@ class OtlpFormatter(logging.Formatter):
             ]
         }
         return json.dumps(request, separators=(",", ":"))
+
+
+def otlp_hex_id(value: str | None, length: int) -> str:
+    """A trace (32) or span (16) id in OTLP's lowercase hex, or "" when ``value`` is not one.
+
+    Dashes are dropped, so a GUID, which is 16 bytes, becomes a trace id: a CI run's id
+    can join its logs up without reformatting. An all-zero id is invalid in W3C trace
+    context, so it is refused too. Refusing means leaving the field out: a collector
+    rejects a whole payload with a bad id, and logging must never lose the record.
+    """
+    candidate = (value or "").strip().replace("-", "").lower()
+    if len(candidate) != length or candidate.strip("0123456789abcdef") or not candidate.strip("0"):
+        return ""
+    return candidate
+
+
+def _resource_attributes(
+    environ: Mapping[str, str], service_name: str | None, service_version: str | None
+) -> list[dict[str, Any]]:
+    extra = _parse_resource_attributes(environ.get("OTEL_RESOURCE_ATTRIBUTES", ""))
+    named = extra.pop("service.name", None)
+    versioned = extra.pop("service.version", None)
+    placed = extra.pop("deployment.environment.name", None)
+    name = (
+        service_name
+        or environ.get(brand.env_var("SERVICE_NAME"))
+        or environ.get("OTEL_SERVICE_NAME")
+        or named
+        or SERVICE_NAME
+    )
+    version = service_version or environ.get(brand.env_var("SERVICE_VERSION")) or versioned
+    environment = environ.get(brand.env_var("DEPLOYMENT_ENVIRONMENT")) or placed
+    attributes = [
+        _attribute("service.name", name),
+        _attribute("service.version", version or __version__),
+    ]
+    if environment:
+        attributes.append(_attribute("deployment.environment.name", environment))
+    attributes.extend(_attribute(key, value) for key, value in extra.items())
+    return attributes
+
+
+def _parse_resource_attributes(text: str) -> dict[str, str]:
+    """``OTEL_RESOURCE_ATTRIBUTES``: ``key=value`` pairs, comma separated, values
+    percent-encoded. A malformed pair is skipped, as the specification allows."""
+    found: dict[str, str] = {}
+    for pair in text.split(","):
+        key, sep, value = pair.partition("=")
+        if sep and key.strip():
+            found[unquote(key.strip())] = unquote(value.strip())
+    return found
 
 
 def _attribute(key: str, value: str | int) -> dict[str, Any]:

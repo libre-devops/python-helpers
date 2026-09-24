@@ -22,6 +22,7 @@ NAME = package.__name__
 VENDORS = {
     "microsoft": [
         "azcli",
+        "automation",
         "entra",
         "graph",
         "xdr",

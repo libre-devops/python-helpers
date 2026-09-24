@@ -283,3 +283,11 @@ def test_ensure_token_fetches_it_without_a_request():
     assert source.calls == 1
     assert adapter.requests == []
     ApiClient(BASE, None).ensure_token()  # no token, nothing to do
+
+
+def test_get_text_returns_a_plain_text_body_and_retries_like_a_get():
+    replies = iter([(503, {}), (200, b"line one\nline two\n", {"Content-Type": "text/plain"})])
+    api, adapter, sleeps = client(lambda request: next(replies))
+    assert api.get_text("/output", params={"api-version": "1"}) == "line one\nline two\n"
+    assert len(adapter.requests) == 2
+    assert len(sleeps) == 1

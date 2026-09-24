@@ -170,6 +170,17 @@ class ApiClient:
         """GET ``path`` and return the JSON object it responds with."""
         return self.request("GET", path, params=params, headers=headers)
 
+    def get_text(
+        self,
+        path: str,
+        *,
+        params: Mapping[str, str] | None = None,
+        headers: Mapping[str, str] | None = None,
+    ) -> str:
+        """GET ``path`` and return its body as text, for the few APIs that answer in text."""
+        response = self._send("GET", self.url(path, params), headers)
+        return response.text
+
     def post(
         self,
         path: str,

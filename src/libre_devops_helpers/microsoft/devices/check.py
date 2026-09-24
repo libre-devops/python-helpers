@@ -173,6 +173,16 @@ class DeviceChecker:
                 outcomes.append(Outcome(check, "met", "tagged"))
             else:
                 outcomes.append(Outcome(check, "unmet", "tag missing"))
+        for device_group in expectations.device_groups:
+            check = f"device group {device_group}"
+            if defender_error:
+                outcomes.append(Outcome(check, "error", defender_error))
+            elif machine is None:
+                outcomes.append(Outcome(check, "unmet", "no Defender record"))
+            elif machine.device_group.casefold() == device_group.casefold():
+                outcomes.append(Outcome(check, "met", "in the device group"))
+            else:
+                outcomes.append(Outcome(check, "unmet", f"in {machine.device_group or 'none'}"))
         for group in expectations.groups:
             check = f"group {group}"
             if errors.get("entra"):

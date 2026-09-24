@@ -34,7 +34,15 @@ class FakeTenant:
         self.fail: dict[str, tuple[int, dict]] = {}
         self.calls: list[str] = []
 
-    def add(self, name: str, *, onboarded: bool = True, tags=(), last_seen="2026-09-24T11:00:00Z"):
+    def add(
+        self,
+        name: str,
+        *,
+        onboarded: bool = True,
+        tags=(),
+        device_group="UnassignedGroup",
+        last_seen="2026-09-24T11:00:00Z",
+    ):
         self.entra.setdefault(name, []).append(
             {
                 "id": object_id(name),
@@ -51,6 +59,7 @@ class FakeTenant:
                 "healthStatus": "Active",
                 "lastSeen": last_seen,
                 "machineTags": list(tags),
+                "rbacGroupName": device_group,
                 "aadDeviceId": device_id(name),
             }
         )
@@ -81,6 +90,8 @@ class FakeTenant:
             return (200, {"value": self.entra.get(name, [])})
         if parts.path == "/v1.0/groups":
             return (200, {"value": [{"id": GROUP_ID, "displayName": "Pilot"}]})
+        if parts.path == f"/v1.0/groups/{GROUP_ID}":
+            return (200, {"id": GROUP_ID, "displayName": "Pilot"})
         if parts.path.endswith("/transitiveMembers/microsoft.graph.device"):
             return (200, {"value": [{"id": object_id(name)} for name in self.group_members]})
         if parts.path.endswith("/transitiveMemberOf/microsoft.graph.group"):

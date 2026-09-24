@@ -7,17 +7,17 @@ Microsoft and covers most of `ldo`, but not all of it:
 
 | Commands | API | Needs | Azure CLI's token? |
 | --- | --- | --- | --- |
-| `entra device-groups`, `group-devices`, `group-members`, `user-groups` | Graph | directory, device, group or user read | yes |
+| `entra devices`, `device-groups`, `group-devices`, `group-members`, `user-groups`, `--group` | Graph | directory, device, group or user read | yes |
 | `entra user-roles` | Graph | directory read; PIM eligibility needs `RoleEligibilitySchedule.Read.Directory` | active roles only |
 | `entra sign-ins` | Graph | `AuditLog.Read.All` and directory read; Entra ID P1 | yes |
 | `entra app-credentials` | Graph | `Application.Read.All` | yes |
 | `entra ca-policies` | Graph | `Policy.Read.All` | no: Graph returns an empty list |
 | `intune devices`, `--intune`, `--compliant` | Graph | `DeviceManagementManagedDevices.Read.All` | no |
-| `xdr` machines, alerts, vulns, indicators, `--defender`, `--tag` | Defender | the read permissions, or a Defender role | yes, through your Defender role |
+| `xdr` machines, alerts, vulns, indicators, `--defender`, `--tag`, `--device-group` | Defender | the read permissions, or a Defender role | yes, through your Defender role |
 | `xdr hunt`, `graph hunt`, `devices av-signature` | Graph | `ThreatHunting.Read.All`, and a Defender XDR role | no; `--endpoint` does, for the device tables |
 | `xdr incidents ...` | Graph | `SecurityIncident.Read.All`, and a role such as Security Reader | no |
 | `graph get ...` | Graph | whatever the path reads | directory, users, groups, devices, apps: yes |
-| `azure ...`, `logicapp export` | ARM | Reader | yes |
+| `azure ...`, `azure automation ...`, `logicapp export` | ARM | Reader | yes |
 | `logicapp validate` | ARM | `Microsoft.Logic/locations/workflows/validate/action` (Logic App Contributor) | yes |
 | `keyvault expiry` | Key Vault | Key Vault Reader, and a firewall that lets you in | yes |
 | `logs query` | Log Analytics | Log Analytics Reader | yes |

@@ -158,3 +158,9 @@ def test_av_signature_can_print_its_query_or_refuse_a_bad_version(config_file):
     assert shown.stdout.startswith('let wanted = dynamic(["web01"]);')
     bad = run(config_file, routes({}), ["devices", "av-signature", "web01", "--at-least", "new"])
     assert isinstance(bad.exception, InputError)
+
+
+def test_devices_check_takes_a_defender_device_group(config_file, tenant):
+    args = ["devices", "check", "web01", "--device-group", "Linux servers", "-o", "csv"]
+    result = invoke(config_file, tenant, args)
+    assert result.stdout.splitlines()[0] == "DEVICE,ENTRA,DEFENDER,DEVICE GROUP LINUX SERVERS"

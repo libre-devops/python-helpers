@@ -53,7 +53,7 @@ test *args:
 # Run the tests on the oldest supported Python
 [group('check')]
 test-311 *args:
-    uv run --python 3.11 --isolated --with pytest --with-editable . pytest {{ args }}
+    uv run --python 3.11 --isolated --with pytest --with pyyaml --with-editable . pytest {{ args }}
 
 # Run the tests with line and branch coverage; fails below the floor in pyproject.toml
 [group('check')]

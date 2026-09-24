@@ -23,6 +23,7 @@ def machine(name: str = "web01", last_seen: str | None = None, **extra) -> dict:
         "lastSeen": last_seen or ago(0),
         "osPlatform": "Linux",
         "machineTags": ["linux-servers"],
+        "rbacGroupName": "Linux servers",
         **extra,
     }
 
@@ -71,6 +72,8 @@ def test_machines_table_shows_health_tags_and_older_records(config_file):
     result = run(config_file, handler, ["xdr", "machines", "web01"])
     assert result.exit_code == 0, result.output
     assert "linux-servers" in result.stdout
+    assert "DEVICE GROUP" in result.stdout
+    assert "Linux servers" in result.stdout
     assert "older record" not in result.stdout
     everything = run(config_file, handler, ["xdr", "machines", "web01", "--all-records"])
     assert "older record" in everything.stdout

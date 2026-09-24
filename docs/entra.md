@@ -2,9 +2,25 @@
 
 [Back to the docs](README.md)
 
+## Devices and their groups
+
 ```bash
-ldo entra device-groups web01.corp.example.com
-ldo entra group-devices "MDE Pilot Devices"
+ldo entra devices web01,web02                   # in Entra? OS, trust type, last sign-in
+ldo entra devices -f plan.xlsx --column FQDN --group "MDE Pilot Devices"
+ldo entra devices web01 --group 55555555-5555-5555-5555-555555555555 --direct
+ldo entra device-groups web01.corp.example.com  # every group one device is in
+ldo entra group-devices "MDE Pilot Devices"     # every device in one group
+```
+
+`entra devices --group` checks each device is in the group, adding a column per group, and
+exits 3 when a device is missing from Entra or from a group. A group is named by its object id
+or its display name (a name two groups share is refused, with their ids); each group's members
+are fetched once, however long the list. To check Defender onboarding at the same time, use
+[`devices check --group`](devices.md#check-and-watch).
+
+## Users, roles and apps
+
+```bash
 ldo entra group-members "Platform Admins" --kind user
 ldo entra user-groups ana@example.com --direct
 ldo entra user-roles ana@example.com            # active roles, and PIM-eligible ones

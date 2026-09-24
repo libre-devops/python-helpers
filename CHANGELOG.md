@@ -3,6 +3,50 @@
 All notable changes to libre-devops-helpers are recorded here. The project follows
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- `ldo entra devices`: look devices up in Entra ID by name (arguments, stdin, or `-f` with
+  a file or workbook column), and with `--group` check each is in an Entra group, named by
+  its object id or display name. Each group's members are fetched once; nested membership
+  counts unless `--direct`. Exits 3 when a device is missing, or not in every group.
+- Defender device groups: `xdr machines` shows each machine's device group, and
+  `devices check` and `watch` take `--device-group NAME` as an expectation.
+- `ldo azure automation`: `accounts`, `jobs` (a runbook's recent runs, with `--runbook`,
+  `--status`, `--failed` and `--since`), `logs` (a job's output, warning, error and other
+  streams, oldest first, with why it failed; the newest job by default) and `output` (the
+  job's output as text, for piping). An account is named by name or resource id. `jobs`
+  and `logs` exit 3 on a failed job.
+
+- `-o json` is coloured on a terminal (keys, strings, numbers, booleans, and brackets in
+  the banner's rainbow by depth); piped, it stays plain JSON.
+- `ldo json`: pretty-print JSON from stdin or a file, one document or JSON Lines, in
+  colour on a terminal, with `--sort-keys`, `--compact`, `--indent` and `--colour`.
+  `--yaml` writes YAML instead, with the standard library alone: strings a YAML reader
+  could misread are quoted, and multi-line strings become `|` blocks.
+
+- OTLP logs take the same variables as `Write-LdoLog`: `LDO_SERVICE_NAME`,
+  `LDO_SERVICE_VERSION` and `LDO_DEPLOYMENT_ENVIRONMENT` for the resource, and
+  `LDO_TRACE_ID`, `LDO_SPAN_ID` and `LDO_CORRELATION_ID` to put every record in a trace
+  (an id that is not valid hex is left out). `OTEL_SERVICE_NAME` and
+  `OTEL_RESOURCE_ATTRIBUTES` are read too.
+
+### Changed
+
+- With `--log-format otlp` or `json`, stderr holds only log records: the notes, warnings
+  and errors `ldo` prints become records (an error's hint an attribute), so the stream is
+  clean JSON Lines for a collector. Tested against OpenTelemetry Collector 0.161 through
+  the `otlp_json_file` receiver, and `file_log` with the `otlp_json` connector.
+- OTLP records use the semantic conventions' current attribute names,
+  `code.function.name` (fully qualified) and `code.line.number`, in place of the
+  deprecated `code.function` and `code.lineno`.
+
+### Fixed
+
+- Help text keeps its paragraphs together rather than breaking where the source lines
+  did, and a test keeps help text free of what markdown would swallow.
+
 ## 0.3.0
 
 ### Changed

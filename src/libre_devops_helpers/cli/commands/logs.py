@@ -16,7 +16,9 @@ from libre_devops_helpers.cli.options import (
 from libre_devops_helpers.cli.render import Output
 from libre_devops_helpers.core.errors import ConfigError
 
-logs_app = typer.Typer(help="Log Analytics and Sentinel: run KQL.", no_args_is_help=True)
+logs_app = typer.Typer(
+    rich_markup_mode="markdown", help="Log Analytics and Sentinel: run KQL.", no_args_is_help=True
+)
 
 
 def register(app: typer.Typer) -> None:

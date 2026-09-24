@@ -16,7 +16,11 @@ from libre_devops_helpers.cli.options import (
 )
 from libre_devops_helpers.cli.render import Output
 
-intune_app = typer.Typer(help="Intune: managed devices and compliance.", no_args_is_help=True)
+intune_app = typer.Typer(
+    rich_markup_mode="markdown",
+    help="Intune: managed devices and compliance.",
+    no_args_is_help=True,
+)
 
 
 def register(app: typer.Typer) -> None:

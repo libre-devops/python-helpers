@@ -15,6 +15,7 @@ from libre_devops_helpers.servicenow import OAuthCredential
 from libre_devops_helpers.servicenow import instance as instance_feature
 
 snow_app = typer.Typer(
+    rich_markup_mode="markdown",
     name="snow",
     help="ServiceNow: sign in, who you are, the instance and its applications.",
     no_args_is_help=True,

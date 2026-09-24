@@ -31,6 +31,7 @@ from libre_devops_helpers.core.config import ConfigFile, load_config_file
 from libre_devops_helpers.core.errors import ConfigError, ConfigNotFoundError
 from libre_devops_helpers.core.token_store import TokenStore
 from libre_devops_helpers.microsoft.auth import credential_for
+from libre_devops_helpers.microsoft.automation import AutomationClient
 from libre_devops_helpers.microsoft.azcli import AzCli
 from libre_devops_helpers.microsoft.azure import AzureClient
 from libre_devops_helpers.microsoft.config import SECTION as MICROSOFT
@@ -53,7 +54,7 @@ SECTIONS = (MICROSOFT, SERVICENOW)
 
 
 def _prompt(message: str) -> None:
-    typer.secho(message, fg="cyan", err=True)
+    render.notify(message)
 
 
 def _on_a_terminal() -> bool:
@@ -270,6 +271,11 @@ class MicrosoftRuntime:
     def graph(self, profile: Profile) -> GraphClient:
         return self.runtime.track(
             GraphClient.for_profile(profile, self.tokens(profile), **self._options())
+        )
+
+    def automation(self, profile: Profile) -> AutomationClient:
+        return self.runtime.track(
+            AutomationClient.for_profile(profile, self.tokens(profile), **self._options())
         )
 
     def logicapps(self, profile: Profile) -> LogicAppsClient:

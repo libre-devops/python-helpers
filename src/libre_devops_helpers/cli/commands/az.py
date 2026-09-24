@@ -12,7 +12,9 @@ from libre_devops_helpers.microsoft.azcli import match_profile, switch_profile
 from libre_devops_helpers.microsoft.process import AzCliError
 
 az_app = typer.Typer(
-    help="Azure CLI context: switch profiles, show the active account.", no_args_is_help=True
+    rich_markup_mode="markdown",
+    help="Azure CLI context: switch profiles, show the active account.",
+    no_args_is_help=True,
 )
 
 

@@ -24,6 +24,7 @@ class Expectations:
     onboarded: bool = True
     active: bool = False
     tags: tuple[str, ...] = ()
+    device_groups: tuple[str, ...] = ()
     groups: tuple[str, ...] = ()
     in_intune: bool = False
     compliant: bool = False
@@ -31,7 +32,8 @@ class Expectations:
     def __post_init__(self) -> None:
         if not self.checks:
             raise InputError(
-                "nothing to check", hint="enable at least one of Entra, Defender, tags, groups"
+                "nothing to check",
+                hint="enable at least one of Entra, Defender, tags, device groups, groups",
             )
 
     @property
@@ -40,7 +42,7 @@ class Expectations:
 
     @property
     def needs_defender(self) -> bool:
-        return self.onboarded or self.active or bool(self.tags)
+        return self.onboarded or self.active or bool(self.tags) or bool(self.device_groups)
 
     @property
     def needs_intune(self) -> bool:
@@ -57,6 +59,7 @@ class Expectations:
         if self.active:
             names.append("active")
         names.extend(f"tag {tag}" for tag in self.tags)
+        names.extend(f"device group {group}" for group in self.device_groups)
         names.extend(f"group {group}" for group in self.groups)
         if self.in_intune:
             names.append("intune")

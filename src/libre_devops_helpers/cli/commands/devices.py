@@ -37,6 +37,7 @@ from libre_devops_helpers.microsoft.devices import (
 )
 
 devices_app = typer.Typer(
+    rich_markup_mode="markdown",
     help="Devices across Entra, Defender and Intune: check, watch, show, and AV versions.",
     no_args_is_help=True,
 )
@@ -57,9 +58,18 @@ TagOption = Annotated[
     list[str] | None,
     typer.Option("--tag", help="Expect this Defender machine tag. Repeatable."),
 ]
+DeviceGroupOption = Annotated[
+    list[str] | None,
+    typer.Option(
+        "--device-group",
+        help="Expect the device in this Defender device group (its name). Repeatable.",
+    ),
+]
 GroupOption = Annotated[
     list[str] | None,
-    typer.Option("--group", help="Expect membership of this Entra group (name or id). Repeatable."),
+    typer.Option(
+        "--group", help="Expect membership of this Entra group: its object id or name. Repeatable."
+    ),
 ]
 IntuneOption = Annotated[bool, typer.Option("--intune", help="Expect it enrolled in Intune.")]
 CompliantOption = Annotated[
@@ -81,6 +91,7 @@ def _expectations(
     defender: bool,
     active: bool,
     tags: list[str] | None,
+    device_groups: list[str] | None,
     groups: list[str] | None,
     intune: bool,
     compliant: bool,
@@ -90,6 +101,7 @@ def _expectations(
         onboarded=defender,
         active=active,
         tags=tuple(tags or ()),
+        device_groups=tuple(device_groups or ()),
         groups=tuple(groups or ()),
         in_intune=intune,
         compliant=compliant,
@@ -170,6 +182,7 @@ def check(
     defender: DefenderOption = True,
     active: ActiveOption = False,
     tag: TagOption = None,
+    device_group: DeviceGroupOption = None,
     group: GroupOption = None,
     intune: IntuneOption = False,
     compliant: CompliantOption = False,
@@ -183,7 +196,9 @@ def check(
     device misses any expectation.
     """
     wanted = names(devices, from_file, column, sheet)
-    expectations = _expectations(entra, defender, active, tag, group, intune, compliant)
+    expectations = _expectations(
+        entra, defender, active, tag, device_group, group, intune, compliant
+    )
     runtime = get_runtime(ctx).microsoft
     selected = runtime.profile(profile)
     run = _checker(runtime, selected, expectations, workers).check(wanted, expectations)
@@ -219,6 +234,7 @@ def watch_devices(
     defender: DefenderOption = True,
     active: ActiveOption = False,
     tag: TagOption = None,
+    device_group: DeviceGroupOption = None,
     group: GroupOption = None,
     intune: IntuneOption = False,
     compliant: CompliantOption = False,
@@ -232,7 +248,9 @@ def watch_devices(
     when complete, 3 when a limit stopped it first, and 130 on Ctrl-C.
     """
     wanted = names(devices, from_file, column, sheet)
-    expectations = _expectations(entra, defender, active, tag, group, intune, compliant)
+    expectations = _expectations(
+        entra, defender, active, tag, device_group, group, intune, compliant
+    )
     every = duration(interval) or timedelta(minutes=5)
     limit = duration(timeout)
     limits = PollLimits(

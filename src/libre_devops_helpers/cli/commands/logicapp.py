@@ -32,6 +32,7 @@ from libre_devops_helpers.microsoft.logicapps import (
 )
 
 logicapp_app = typer.Typer(
+    rich_markup_mode="markdown",
     name="logicapp",
     help="Consumption Logic Apps: check, audit, compare, export and validate workflows.",
     no_args_is_help=True,

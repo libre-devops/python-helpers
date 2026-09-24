@@ -4,7 +4,7 @@ from datetime import timedelta
 import pytest
 
 from fakes.clock import FakeClock
-from fakes.devices import NOW, FakeTenant, clients, intune_client
+from fakes.devices import GROUP_ID, NOW, FakeTenant, clients, intune_client
 from libre_devops_helpers.core.auth import AccessToken
 from libre_devops_helpers.core.errors import ApiError, InputError, LdoError, ReauthRequired
 from libre_devops_helpers.core.poll import PollLimits
@@ -308,3 +308,29 @@ def test_a_sign_in_nobody_can_renew_ends_the_check():
     entra, xdr = clients(tenant, LapsingTokens(always=True))
     with pytest.raises(ReauthRequired):
         DeviceChecker(entra=entra, xdr=xdr, clock=lambda: NOW).check(["web01"], Expectations())
+
+
+def test_defender_device_groups_are_read_from_the_machine_record():
+    tenant = FakeTenant()
+    tenant.add("web01", device_group="Linux servers")
+    tenant.add("web02")
+    expectations = Expectations(in_entra=False, device_groups=("linux SERVERS",))
+    run = checker(tenant).check(["web01", "web02", "ghost"], expectations)
+    reports = {report.name: report for report in run.reports}
+    check = "device group linux SERVERS"
+    assert reports["web01"].outcome(check).status == "met"
+    assert reports["web02"].outcome(check).detail == "in UnassignedGroup"
+    assert reports["ghost"].outcome(check).detail == "no Defender record"
+    assert not any("/v1.0/" in url for url in tenant.calls)  # Defender only
+
+
+def test_an_entra_group_can_be_named_by_its_object_id():
+    tenant = FakeTenant()
+    for name in ("web01", "web02"):
+        tenant.add(name)
+    tenant.group_members = ["web01"]
+    run = checker(tenant).check(["web01", "web02"], Expectations(groups=(GROUP_ID,)))
+    assert statuses(run, "web01")[f"group {GROUP_ID}"] == "met"
+    assert statuses(run, "web02")[f"group {GROUP_ID}"] == "unmet"
+    looked_up = [url for url in tenant.calls if "/v1.0/groups" in url and "Members" not in url]
+    assert all(f"/v1.0/groups/{GROUP_ID}" in url for url in looked_up), looked_up  # by id, not name

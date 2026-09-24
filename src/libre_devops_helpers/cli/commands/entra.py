@@ -1,24 +1,31 @@
 """Entra commands: devices, users, groups, roles, sign-ins, app credentials, CA policies."""
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 
 from libre_devops_helpers.cli import render
 from libre_devops_helpers.cli.exits import ATTENTION
 from libre_devops_helpers.cli.options import (
+    ColumnOption,
     DirectOption,
+    FromFileOption,
+    NamesArgument,
     OutputOption,
     ProfileOption,
+    SheetOption,
     duration,
     get_runtime,
+    names,
 )
 from libre_devops_helpers.cli.render import Output
 from libre_devops_helpers.core.errors import NotFoundError
 from libre_devops_helpers.core.util import candidate_names, format_duration, is_guid
 from libre_devops_helpers.microsoft.entra import (
     AppCredential,
+    EntraDevice,
     EntraGroup,
     MemberKind,
     RoleAssignment,
@@ -26,7 +33,9 @@ from libre_devops_helpers.microsoft.entra import (
 )
 
 entra_app = typer.Typer(
-    help="Entra ID: devices, users, groups, roles and apps.", no_args_is_help=True
+    rich_markup_mode="markdown",
+    help="Entra ID: devices, users, groups, roles and apps.",
+    no_args_is_help=True,
 )
 
 
@@ -44,6 +53,115 @@ def _group_rows(groups: list[EntraGroup]) -> list[list[render.Cell]]:
         ]
         for group in groups
     ]
+
+
+@entra_app.command("devices")
+def devices(
+    ctx: typer.Context,
+    devices: NamesArgument = None,
+    from_file: FromFileOption = None,
+    column: ColumnOption = None,
+    sheet: SheetOption = None,
+    group: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--group",
+            help="Also check each device is in this Entra group: its object id or display "
+            "name. Repeatable.",
+        ),
+    ] = None,
+    direct: DirectOption = False,
+    workers: Annotated[
+        int, typer.Option("--workers", min=1, max=32, help="Devices looked up at once.")
+    ] = 8,
+    profile: ProfileOption = None,
+    output: OutputOption = Output.TABLE,
+) -> None:
+    """Look devices up in Entra ID, and check they are in the groups you name.
+
+    Each device is looked up by FQDN, then by short hostname, and every registration with
+    the name is shown. --group takes a group's object id or its display name (a name two
+    groups share is refused), and counts nested membership unless --direct. Exits 3 when
+    a device is not in Entra, or not in every group.
+    """
+    wanted = names(devices, from_file, column, sheet)
+    runtime = get_runtime(ctx).microsoft
+    selected = runtime.profile(profile)
+    entra = runtime.entra(selected)
+    # Groups first, on this thread: each is resolved and its members fetched once, and a
+    # lapsed sign-in is met here, where it can be renewed, rather than in a worker.
+    groups = [entra.get_group(ref) for ref in group or []]
+    members = {
+        found.id: frozenset(item.id for item in entra.group_devices(found, transitive=not direct))
+        for found in groups
+    }
+    first = [entra.find_devices(wanted[0])]
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        results = list(
+            zip(wanted, first + list(pool.map(entra.find_devices, wanted[1:])), strict=True)
+        )
+
+    def member(found: EntraGroup, records: list[EntraDevice]) -> bool:
+        return any(record.id in members[found.id] for record in records)
+
+    rows: list[list[render.Cell]] = []
+    for name, records in results:
+        if not records:
+            rows.append([name, ("not in Entra", "red"), "", "", "", "", "", *["" for _ in groups]])
+            continue
+        for index, record in enumerate(records):
+            rows.append(
+                [
+                    name if index == 0 else ("  older record", "bright_black"),
+                    record.display_name,
+                    f"{record.operating_system} {record.os_version}".strip(),
+                    render.yes_no(record.enabled),
+                    record.trust_type,
+                    render.when(record.last_sign_in),
+                    record.device_id,
+                    *[
+                        ("yes", "green") if member(found, [record]) else ("no", "yellow")
+                        for found in groups
+                    ],
+                ]
+            )
+    records_out: list[dict[str, Any]] = [
+        {
+            "query": name,
+            "found": bool(records),
+            "groups": [
+                {"id": found.id, "name": found.display_name, "member": member(found, records)}
+                for found in groups
+            ],
+            "devices": [dict(record.raw) for record in records],
+        }
+        for name, records in results
+    ]
+    render.emit(
+        output,
+        [
+            "DEVICE",
+            "NAME",
+            "OS",
+            "ENABLED",
+            "TRUST",
+            "LAST SIGN-IN",
+            "DEVICE ID",
+            *[f"IN {found.display_name}" for found in groups],
+        ],
+        rows,
+        records_out,
+    )
+    missing = sum(1 for _, records in results if not records)
+    outside = sum(
+        1 for _, records in results if records and not all(member(g, records) for g in groups)
+    )
+    note = f"{len(results) - missing} of {len(results)} in Entra"
+    if groups:
+        note += f", {len(results) - missing - outside} in every group"
+    render.note(note + f" (profile {selected.name})")
+    if missing or outside:
+        raise typer.Exit(ATTENTION)
 
 
 @entra_app.command("device-groups")

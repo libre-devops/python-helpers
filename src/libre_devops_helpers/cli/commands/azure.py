@@ -16,6 +16,7 @@ from libre_devops_helpers.cli.render import Output
 from libre_devops_helpers.core.util import is_guid
 
 azure_app = typer.Typer(
+    rich_markup_mode="markdown",
     help="Azure: subscriptions, Resource Graph, RBAC and Defender for Cloud.",
     no_args_is_help=True,
 )

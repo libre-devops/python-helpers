@@ -12,6 +12,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import logging
 import os
 import sys
 from collections.abc import Iterable, Mapping, Sequence
@@ -52,13 +53,62 @@ def echo(text: str = "", *, err: bool = False) -> None:
     typer.echo(text, err=err)
 
 
+_log = logging.getLogger(__name__)
+
+
+class _Mode:
+    """Whether the log format is structured (json or otlp): set once, by the app."""
+
+    structured = False
+
+
+def structured_output(enabled: bool) -> None:
+    """With a json or otlp log format, stderr carries log records only, so it is clean
+    JSON Lines for a collector: notes, warnings and errors become records too."""
+    _Mode.structured = enabled
+
+
 def note(text: str) -> None:
-    """A dim informational line on stderr."""
+    """A dim informational line on stderr (an INFO record in a structured log format)."""
+    if _Mode.structured:
+        _log.info(text)
+        return
     typer.secho(text, fg="bright_black", err=True)
 
 
 def warn(text: str) -> None:
+    if _Mode.structured:
+        _log.warning(text)
+        return
     typer.secho(f"warning: {text}", fg="yellow", err=True)
+
+
+def error(text: str, hint: str | None = None) -> None:
+    """An error, and what to do about it, on stderr (an ERROR record, hint attached)."""
+    if _Mode.structured:
+        _log.error(text, extra={"hint": hint} if hint else None)
+        return
+    typer.secho(f"error: {text}", fg="red", err=True)
+    if hint:
+        typer.secho(f"hint: {hint}", fg="yellow", err=True)
+
+
+def notify(text: str) -> None:
+    """Something the person must see now, such as a sign-in code: never filtered out."""
+    if _Mode.structured:
+        _log.warning(text)
+        return
+    typer.secho(text, fg="cyan", err=True)
+
+
+def checks_to_stderr(checks: Iterable[Check]) -> None:
+    """A token's checks on stderr: the table, or one record each in a structured format."""
+    if not _Mode.structured:
+        echo(checks_table(checks), err=True)
+        return
+    levels = {"fail": logging.ERROR, "warn": logging.WARNING}
+    for check in checks:
+        _log.log(levels.get(check.status, logging.INFO), f"{check.name}: {check.detail}")
 
 
 def banner(*, force: bool = False) -> None:
@@ -67,6 +117,8 @@ def banner(*, force: bool = False) -> None:
     Shown only on a terminal, and never when the brand's ``NO_BANNER`` variable is set,
     unless ``force`` (someone asked for it). ``NO_COLOR`` keeps it, without colour.
     """
+    if _Mode.structured and not force:
+        return
     if not force and (not sys.stderr.isatty() or os.environ.get(brand.env_var("NO_BANNER"))):
         return
     plain = bool(os.environ.get("NO_COLOR"))
@@ -98,8 +150,84 @@ def title(text: str) -> str:
 
 
 def print_json(data: Any) -> None:
-    """JSON on stdout, for piping into jq or another script."""
-    typer.echo(json.dumps(data, indent=2, default=_json_default))
+    """JSON on stdout: coloured on a terminal, plain when piped into jq or a script."""
+    if colour_wanted():
+        typer.echo(colour_json(_plain(data)), color=True)
+    else:
+        typer.echo(json.dumps(data, indent=2, default=_json_default))
+
+
+def colour_wanted(stream: Any = None) -> bool:
+    """Whether ``stream`` (stdout by default) is a terminal that wants colour."""
+    stream = stream or sys.stdout
+    return bool(getattr(stream, "isatty", lambda: False)()) and not os.environ.get("NO_COLOR")
+
+
+# JSON's colours (256-colour codes): brackets take the banner's rainbow by nesting depth.
+_JSON_KEY = 75
+_JSON_STRING = 114
+_JSON_NUMBER = 215
+_JSON_BOOL = 176
+_JSON_NULL = 244
+
+
+def colour_json(
+    data: Any, *, indent: int | None = 2, sort_keys: bool = False, ensure_ascii: bool = False
+) -> str:
+    """``data`` as JSON laid out as ``json.dumps`` would, in colour.
+
+    Keys, strings, numbers, booleans and null each have a colour, and brackets are
+    coloured by how deeply they nest, in the banner's rainbow, so matching pairs share
+    one. Strip the colour and the text is exactly ``json.dumps(data, indent=indent)``.
+    """
+
+    def paint(text: str, colour: int, *, bold: bool = False) -> str:
+        return typer.style(text, fg=colour, bold=bold)
+
+    def bracket(char: str, depth: int) -> str:
+        return paint(char, _RAINBOW[depth % len(_RAINBOW)], bold=True)
+
+    def scalar(value: Any) -> str:
+        text = json.dumps(value, ensure_ascii=ensure_ascii)
+        if value is None:
+            return paint(text, _JSON_NULL)
+        if isinstance(value, bool):
+            return paint(text, _JSON_BOOL)
+        if isinstance(value, int | float):
+            return paint(text, _JSON_NUMBER)
+        return paint(text, _JSON_STRING)
+
+    def render(value: Any, depth: int) -> str:
+        if isinstance(value, dict):
+            items = sorted(value.items()) if sort_keys else list(value.items())
+            if not items:
+                return bracket("{", depth) + bracket("}", depth)
+            parts = [
+                paint(json.dumps(str(key), ensure_ascii=ensure_ascii), _JSON_KEY, bold=True)
+                + (": " if indent is not None else ":")
+                + render(item, depth + 1)
+                for key, item in items
+            ]
+            return bracket("{", depth) + join(parts, depth) + bracket("}", depth)
+        if isinstance(value, list):
+            if not value:
+                return bracket("[", depth) + bracket("]", depth)
+            parts = [render(item, depth + 1) for item in value]
+            return bracket("[", depth) + join(parts, depth) + bracket("]", depth)
+        return scalar(value)
+
+    def join(parts: list[str], depth: int) -> str:
+        if indent is None:
+            return ",".join(parts)
+        inner = "\n" + " " * (indent * (depth + 1))
+        return inner + ("," + inner).join(parts) + "\n" + " " * (indent * depth)
+
+    return render(data, 0)
+
+
+def _plain(data: Any) -> Any:
+    """``data`` as plain JSON values: datetimes, mappings and the rest turned as for -o json."""
+    return json.loads(json.dumps(data, default=_json_default))
 
 
 def emit(

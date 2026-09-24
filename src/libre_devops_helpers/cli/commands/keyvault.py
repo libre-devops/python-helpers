@@ -21,7 +21,9 @@ from libre_devops_helpers.core.util import format_duration
 from libre_devops_helpers.microsoft.keyvault import KINDS, ItemKind, VaultItem, expiring
 
 keyvault_app = typer.Typer(
-    help="Key Vault: expiry of secrets, certificates and keys.", no_args_is_help=True
+    rich_markup_mode="markdown",
+    help="Key Vault: expiry of secrets, certificates and keys.",
+    no_args_is_help=True,
 )
 
 # Every vault the credential can see, across subscriptions, in one query.

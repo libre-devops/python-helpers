@@ -10,6 +10,7 @@ hostname: each lookup tries the FQDN, then the short name. `ldo device` works as
 ldo devices check web01,web02,db01                  # in Entra and onboarded to Defender?
 ldo devices check -f plan.xlsx --column FQDN --sheet "Ring 1" --tag linux-servers
 ldo devices check -f hosts.txt --group "MDE Pilot Devices" --intune --compliant
+ldo devices check web01,web02 --device-group "Linux servers"   # a Defender device group
 ldo devices watch -f hosts.txt --interval 5m --timeout 2h
 ldo devices show web01.corp.example.com             # one device, and what looks wrong
 ldo devices av-signature web01,db01                 # Defender Antivirus versions
@@ -30,7 +31,8 @@ falls short, and `watch` 130 on Ctrl-C.
 | `--defender` / `--no-defender` | onboarded to Defender (on by default) |
 | `--active` | Defender health is Active |
 | `--tag NAME` | carries this Defender machine tag (repeatable) |
-| `--group NAME` | a member of this Entra group (repeatable) |
+| `--device-group NAME` | falls in this Defender device group (repeatable) |
+| `--group NAME_OR_ID` | a member of this Entra group, by display name or object id (repeatable) |
 | `--intune`, `--compliant` | enrolled in Intune, and compliant |
 
 ## show
