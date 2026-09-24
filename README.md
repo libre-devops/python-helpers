@@ -923,8 +923,9 @@ them (the version, a command's help, a non-root user, and for the default image 
 signed-out `az whoami` that must fail cleanly), and scans them with a checksum-pinned Trivy. The `slim` image
 fails on any high or critical vulnerability that has a fix; the default image fails on a
 fixed critical one and reports the rest, since the Azure CLI inside it pins its own
-dependencies. Findings
-go to the Security tab.
+dependencies. Findings with a fix go to the Security tab. Those without one, mostly Debian
+base packages still waiting on a fix from Debian, are kept with each run as a
+`trivy-<variant>` artifact, and the weekly rebuild picks up each fix as Debian releases it.
 
 After a passing run on `main`, `.github/workflows/badges.yml` commits the coverage total
 to the `badges` branch as a shields.io endpoint file, which is where the README's coverage

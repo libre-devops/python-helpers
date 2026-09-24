@@ -14,5 +14,5 @@ def test_a_browser_is_found_the_way_the_azure_cli_looks_for_one(monkeypatch):
 
     monkeypatch.setattr(webbrowser, "get", no_browser)
     assert not can_launch_browser()
-    monkeypatch.setattr(webbrowser, "get", lambda: object())
+    monkeypatch.setattr(webbrowser, "get", object)
     assert can_launch_browser()

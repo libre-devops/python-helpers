@@ -1,4 +1,5 @@
 import threading
+from urllib.parse import urlsplit
 
 import pytest
 
@@ -20,7 +21,9 @@ def test_a_client_secret_profile_gets_its_token_from_entra_not_az(config_file, t
         environ={"AZURE_CLIENT_SECRET": "s3cret"},
     )
     assert result.exit_code == 0, result.output
-    login = next(r for r in tenant.requests if "login.microsoftonline.com" in r.url)
+    login = next(
+        r for r in tenant.requests if urlsplit(r.url).hostname == "login.microsoftonline.com"
+    )
     assert form_body(login)["client_secret"] == "s3cret"
     assert "s3cret" not in result.output
 

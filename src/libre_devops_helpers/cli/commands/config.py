@@ -34,9 +34,14 @@ def init(
     if path.exists() and not force:
         raise ConfigError(f"{path} already exists", hint="pass --force to overwrite it")
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(TEMPLATE, encoding="utf-8")
+    # Created 0600, rather than written and then narrowed, so no other account can read it
+    # even for a moment. The template holds no secrets, but the ids filled in later are
+    # nobody else's business.
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        handle.write(TEMPLATE)
     if os.name == "posix":
-        path.chmod(0o600)
+        path.chmod(0o600)  # open keeps an existing file's mode, so --force narrows it here
     render.echo(f"Wrote {path}")
     render.note(f"Next: replace the placeholder ids, then run {brand.command('profiles')}.")
 

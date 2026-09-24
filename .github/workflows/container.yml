@@ -176,7 +176,12 @@ jobs:
           podman save --quiet --output "${RUNNER_TEMP}/image.tar" "localhost/image:${VARIANT}"
           scan=("${RUNNER_TEMP}/trivy" image --input "${RUNNER_TEMP}/image.tar"
             --cache-dir "${RUNNER_TEMP}/trivy-cache" --scanners vuln --quiet)
-          "${scan[@]}" --format sarif --output "${RUNNER_TEMP}/trivy.sarif"
+          # The Security tab gets the findings that have a fix: the ones there is something
+          # to do about. Debian's unfixed ones (most of a slim base image's count) would sit
+          # there for months; the weekly rebuild takes each fix when Debian ships it. The
+          # full list, unfixed included, is kept with the run.
+          "${scan[@]}" --format sarif --ignore-unfixed --output "${RUNNER_TEMP}/trivy.sarif"
+          "${scan[@]}" --format table --output "${RUNNER_TEMP}/trivy-all.txt"
           "${scan[@]}" --format cyclonedx --output "${RUNNER_TEMP}/sbom.cdx.json"
           "${scan[@]}" --format table --severity HIGH,CRITICAL --ignore-unfixed
 
@@ -186,6 +191,15 @@ jobs:
         with:
           sarif_file: ${{ runner.temp }}/trivy.sarif
           category: container-${{ matrix.variant }}
+
+      - name: Keep the full scan
+        if: steps.plan.outputs.skip != 'true' && !cancelled()
+        uses: actions/upload-artifact@v7
+        with:
+          name: trivy-${{ matrix.variant }}
+          path: ${{ runner.temp }}/trivy-all.txt
+          if-no-files-found: ignore
+          retention-days: 30
 
       - name: Gate on fixed vulnerabilities
         if: steps.plan.outputs.skip != 'true'

@@ -77,10 +77,10 @@ def test_content_that_is_not_json_or_empty_or_missing_is_refused(tmp_path):
 def test_files_are_named_after_their_stem(tmp_path):
     assert workflow_name_from(Path("router.json.tftpl")) == "router"
     assert workflow_name_from(Path("router.json")) == "router"
-    assert load(write(tmp_path, "handler.json.tftpl", BARE)).name == "handler"
-    assert (
-        load(write(tmp_path, "renamed.json", ARM_RESOURCE)).name == "logic-arm"
-    )  # its own name wins
+    template = write(tmp_path, "handler.json.tftpl", BARE)
+    renamed = write(tmp_path, "renamed.json", ARM_RESOURCE)
+    assert load(template).name == "handler"
+    assert load(renamed).name == "logic-arm"  # its own name wins
 
 
 def test_every_nested_action_is_walked_with_its_path():

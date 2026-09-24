@@ -18,4 +18,11 @@ dependencies = ["azure-cli==2.90.0"]
 
 [tool.uv]
 package = false
-override-dependencies = []
+override-dependencies = [
+    # CVE-2026-69247, CVE-2026-69248 and CVE-2026-69249 are fixed in cryptography 50;
+    # azure-cli-core 2.90.0 pins msal 1.36.0, which caps cryptography below 49.
+    # Drop both once the Azure CLI moves its msal pin.
+    "msal==1.39.0; sys_platform != 'win32'",
+    "msal[broker]==1.39.0; sys_platform == 'win32'",
+    "cryptography>=50.0.1",
+]

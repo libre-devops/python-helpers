@@ -46,11 +46,14 @@ _KEYCHAIN_HINT = f"install the keychain extra: uv tool install '{brand.DISTRIBUT
 class TokenStore(Protocol):
     """Named secrets that outlast one command (or, for MemoryStore, do not)."""
 
-    def load(self, key: str) -> str | None: ...
+    def load(self, key: str) -> str | None:
+        """The value kept under ``key``, or None when there is none."""
 
-    def save(self, key: str, value: str) -> None: ...
+    def save(self, key: str, value: str) -> None:
+        """Keep ``value`` under ``key``, replacing what was there."""
 
-    def delete(self, key: str) -> bool: ...
+    def delete(self, key: str) -> bool:
+        """Forget ``key``. True when there was something to forget."""
 
 
 class MemoryStore:

@@ -64,9 +64,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         tags = image_tags(args.version, args.variant, stamp=args.stamp, latest=args.latest)
     except ValueError as exc:
-        parser.error(str(exc))
-    for tag in tags:
-        print(f"{args.image}:{tag}" if args.image else tag)
+        parser.error(str(exc))  # exits with status 2
+    else:
+        for tag in tags:
+            print(f"{args.image}:{tag}" if args.image else tag)
     return 0
 
 

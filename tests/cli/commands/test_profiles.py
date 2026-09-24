@@ -1,4 +1,5 @@
 import json
+import re
 
 from fakes.http import routes
 from fakes.ids import CLIENT_ID, TENANT
@@ -100,5 +101,6 @@ token_cache = "keychain"
     assert rows["lab"]["signed_in"] is True  # basic, with the password set
     assert rows["desk"]["signed_in"] is None  # the keychain is not read for a listing
     table = run(config, routes({}), ["profiles"], environ=environ)
-    assert "oauth (browser)" in table.stdout
-    assert "itsm.example.com" in table.stdout
+    rows = [re.split(r"\s{2,}", line.strip()) for line in table.stdout.splitlines()]
+    work = next(cells for cells in rows if "work (default)" in cells)
+    assert {"itsm.example.com", "oauth (browser)"} <= set(work)

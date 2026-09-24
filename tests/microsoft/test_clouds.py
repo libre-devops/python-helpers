@@ -34,7 +34,7 @@ def test_resources_accept_their_url_or_app_id_as_audience():
     assert {"https://graph.microsoft.us", GRAPH_APP_ID} <= graph.audiences
     arm = resources_for(PUBLIC)["arm"]
     assert arm.url == "https://management.azure.com/"
-    assert "https://management.core.windows.net" in arm.audiences
+    assert {"https://management.core.windows.net"} <= arm.audiences
 
 
 def test_resolve_resource_by_key_url_or_ad_hoc():

@@ -3,6 +3,26 @@
 All notable changes to libre-devops-helpers are recorded here. The project follows
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Security
+
+- The default image's Azure CLI now runs cryptography 50.0.1 (CVE-2026-69247,
+  CVE-2026-69248 and CVE-2026-69249). Azure CLI 2.90.0 pins msal 1.36.0, which caps
+  cryptography below 49, so msal 1.39.0 is forced as well until Microsoft moves the pin.
+- `config init` creates the config file readable only by you, rather than narrowing it
+  after writing.
+
+### Changed
+
+- The container scan reports findings that have a fix to the Security tab. The full list,
+  unfixed Debian findings included, is kept with each run as the `trivy-<variant>`
+  artifact.
+- Code scanning findings in the tests and scripts are fixed: URL checks compare the host,
+  calls with side effects are made before they are asserted, protocol methods have
+  docstrings rather than empty bodies, and the ServiceNow runtime no longer imports the
+  runtime that imports it.
+
 ## 0.2.0
 
 ### Added

@@ -79,7 +79,7 @@ Out of scope:
   more.
 - Vulnerabilities in the Azure CLI, Microsoft Graph or Defender for Endpoint themselves,
   including the Azure CLI's pinned dependencies in the default container image, which the scan reports
-  in the Security tab.
+  in the Security tab when a fix exists.
   Report those to Microsoft through the
   [Microsoft Security Response Center](https://msrc.microsoft.com/report).
 - Vulnerabilities in third-party dependencies that already carry a public advisory.

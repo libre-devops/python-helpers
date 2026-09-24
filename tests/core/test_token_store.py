@@ -29,8 +29,8 @@ def test_the_memory_store_keeps_values_for_this_process_only():
     assert store.load("k") is None
     store.save("k", "v")
     assert store.load("k") == "v"
-    assert store.delete("k") is True
-    assert store.delete("k") is False
+    first, second = store.delete("k"), store.delete("k")
+    assert (first, second) == (True, False)
 
 
 def test_the_file_store_round_trips_and_records_when_it_saved(tmp_path):
@@ -43,9 +43,8 @@ def test_the_file_store_round_trips_and_records_when_it_saved(tmp_path):
     saved = json.loads(path.read_text(encoding="utf-8"))
     assert saved["k"]["value"] == "refresh-1"
     assert "saved" in saved["k"]
-    assert store.delete("k") is True
-    assert store.delete("k") is False
-    assert store.delete("other") is True
+    deleted = [store.delete("k"), store.delete("k"), store.delete("other")]
+    assert deleted == [True, False, True]
     assert not path.exists()  # the last one out removes the file
     assert list(path.parent.iterdir()) == []  # and no temporary file is left
 
@@ -143,8 +142,8 @@ def test_the_keychain_store_uses_the_tools_service_name():
     store.save("k", "v")
     assert backend.values == {(f"{brand.COMMAND} sign-in", "k"): "v"}
     assert store.load("k") == "v"
-    assert store.delete("k") is True
-    assert store.delete("k") is False
+    first, second = store.delete("k"), store.delete("k")
+    assert (first, second) == (True, False)
     assert store.load("k") is None
 
 

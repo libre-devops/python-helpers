@@ -35,7 +35,8 @@ class AccessToken:
 class TokenProvider(Protocol):
     """Anything that can produce an access token for a resource in a tenant."""
 
-    def get_token(self, resource: str, tenant_id: str) -> AccessToken: ...
+    def get_token(self, resource: str, tenant_id: str) -> AccessToken:
+        """An access token for ``resource`` in ``tenant_id``."""
 
 
 class CachingTokenProvider:

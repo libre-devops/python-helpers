@@ -200,9 +200,11 @@ class CodeReceiver(Protocol):
 
     redirect_uri: str
 
-    def wait(self, timeout: float) -> dict[str, str]: ...
+    def wait(self, timeout: float) -> dict[str, str]:
+        """The redirect's query parameters, once it arrives within ``timeout`` seconds."""
 
-    def close(self) -> None: ...
+    def close(self) -> None:
+        """Stop listening."""
 
 
 class LoopbackReceiver:

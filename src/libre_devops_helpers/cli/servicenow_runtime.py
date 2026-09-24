@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from collections.abc import Callable, Mapping
+from typing import Protocol, TypeVar
+
+import requests
 
 from libre_devops_helpers.core import brand
 from libre_devops_helpers.core.auth import CachingTokenProvider, token_source
+from libre_devops_helpers.core.config import ConfigFile
 from libre_devops_helpers.core.errors import ConfigError
+from libre_devops_helpers.core.token_store import TokenStore
 from libre_devops_helpers.servicenow import (
     BasicCredential,
     Credential,
@@ -26,14 +31,38 @@ from libre_devops_helpers.servicenow.config import (
 )
 from libre_devops_helpers.servicenow.instance import InstanceClient
 
-if TYPE_CHECKING:
-    from libre_devops_helpers.cli.runtime import Runtime
+_C = TypeVar("_C")
+
+
+class Host(Protocol):
+    """What this needs from the CLI's Runtime.
+
+    A Protocol, so this module does not import runtime.py, which imports this one.
+    """
+
+    environ: Mapping[str, str]
+    session: requests.Session | None
+    token_store: TokenStore | None
+    notify: Callable[[str], None]
+    interactive: Callable[[], bool]
+    ask: Callable[[str, bool], str]
+    has_browser: Callable[[], bool]
+    open_browser: Callable[[str], object]
+
+    def optional_config_file(self) -> ConfigFile | None:
+        """The config file, or None when there is none."""
+
+    def verify(self) -> bool | str:
+        """TLS verification for requests: True, or a CA bundle's path."""
+
+    def track(self, client: _C) -> _C:
+        """Close ``client`` when the command ends, and return it."""
 
 
 class ServiceNowRuntime:
     """Profiles, credentials and clients for ServiceNow, created as they are needed."""
 
-    def __init__(self, runtime: Runtime) -> None:
+    def __init__(self, runtime: Host) -> None:
         self.runtime = runtime
         self._credentials: dict[str, Credential] = {}
         self._tokens: dict[str, CachingTokenProvider] = {}

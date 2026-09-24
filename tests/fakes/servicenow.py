@@ -130,9 +130,10 @@ class FakeInstance:
         if name in self.denied or name in CLOSED:
             detail = "Failed API level ACL Validation"
             error = {"message": "User Not Authorized", "detail": detail}
-            return (403, {"error": error, "status": "failure"})
+            return (403, {"error": error, "status": "failure"}, {})
         if name not in self.tables:
-            return (400, {"error": {"message": f"Invalid table {name}"}, "status": "failure"})
+            body = {"error": {"message": f"Invalid table {name}"}, "status": "failure"}
+            return (400, body, {})
         params = {key: values[0] for key, values in parse_qs(raw_query).items()}
         rows = [row for row in self.tables[name] if _matches(row, params.get("sysparm_query", ""))]
         offset = int(params.get("sysparm_offset", "0"))

@@ -74,7 +74,8 @@ _REAUTH_OFF = {"off", "never", "no", "false", "0"}
 
 
 class _Closeable(Protocol):
-    def close(self) -> None: ...
+    def close(self) -> None:
+        """Release the connection pool."""
 
 
 C = TypeVar("C", bound=_Closeable)

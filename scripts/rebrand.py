@@ -20,7 +20,6 @@ from __future__ import annotations
 import argparse
 import re
 import subprocess
-import sys
 import tomllib
 from dataclasses import dataclass, fields, replace
 from pathlib import Path
@@ -255,4 +254,4 @@ def main(argv: list[str] | None = None) -> None:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()
