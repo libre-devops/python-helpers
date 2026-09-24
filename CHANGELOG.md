@@ -98,6 +98,8 @@ All notable changes to libre-devops-helpers are recorded here. The project follo
 - `just use` and `just token` ran commands that had moved under `az` and `entra`.
 - Four CLI tests failed in GitHub Actions, where Typer styles and wraps usage errors; they
   now compare the message's plain text.
+- A sheet test's 70,000 character id failed on Windows, which caps an environment
+  variable (pytest's `PYTEST_CURRENT_TEST`) at 32,767 characters; its cases have short ids.
 
 ### Security
 

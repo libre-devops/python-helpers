@@ -182,6 +182,9 @@ def test_a_document_type_declaration_is_refused_before_parsing(tmp_path, monkeyp
         '<?xml version="1.0" encoding="utf-8"?><worksheet/>'.encode("utf-16"),
         b'<?xml version="1.0"' + b" " * 70_000 + b"?><worksheet/>",
     ],
+    # Short ids: pytest puts the id in PYTEST_CURRENT_TEST, and Windows caps a variable
+    # at 32,767 characters.
+    ids=["cp037", "utf-16 declared", "utf-16 bytes", "a long declaration"],
 )
 def test_a_part_in_another_encoding_is_refused(tmp_path, content):
     parts: dict[str, str | bytes] = dict(workbook_parts({"Plan": []}))
