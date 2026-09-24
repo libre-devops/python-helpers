@@ -1,0 +1,362 @@
+"""HTTP client for Microsoft APIs: bearer auth, bounded retries, Retry-After, paging.
+
+Built on requests. Retries are decided on the HTTP status code (408, 429, 5xx) and on
+connection errors or timeouts, never on the wording of an error message. The bearer
+token is only ever sent to the client's own https host, and redirects are not followed.
+Every POST this package makes is a read-only query or a token request, so retrying
+one is safe.
+"""
+
+from __future__ import annotations
+
+import email.utils
+import ipaddress
+import json
+import logging
+import random
+import time
+from collections.abc import Callable, Iterator, Mapping
+from datetime import UTC, datetime
+from typing import Any, Self
+from urllib.parse import quote, urlencode, urlsplit
+
+import requests
+
+from libre_devops_helpers import __version__
+from libre_devops_helpers.core import brand
+from libre_devops_helpers.core.errors import ApiError
+
+log = logging.getLogger(__name__)
+
+RETRY_STATUSES = frozenset({408, 429, 500, 502, 503, 504})
+USER_AGENT = f"{brand.COMMAND}/{__version__}"
+
+
+class ApiClient:
+    """JSON client for one API base URL, usually authenticated with a bearer token.
+
+    ``token`` is called before every request, so a caching provider can refresh a token
+    close to expiry. Tokens go in the Authorization header only and are never logged.
+    With ``token=None`` no Authorization header is sent; only then may ``allow_http``
+    permit a plain http base URL on a loopback or link-local host, which is what the
+    managed identity endpoints use.
+    """
+
+    def __init__(
+        self,
+        base_url: str,
+        token: Callable[[], str] | None,
+        *,
+        name: str = "API",
+        session: requests.Session | None = None,
+        verify: bool | str = True,
+        timeout: float = 30.0,
+        max_attempts: int = 4,
+        backoff: float = 1.0,
+        max_backoff: float = 30.0,
+        max_retry_after: float = 120.0,
+        sleep: Callable[[float], None] = time.sleep,
+        allow_http: bool = False,
+    ) -> None:
+        parts = urlsplit(base_url)
+        if not parts.netloc or parts.scheme not in {"https", "http"}:
+            raise ValueError(f"base_url must be an https URL, got {base_url!r}")
+        if parts.scheme == "http" and not (
+            allow_http and token is None and _is_local(parts.hostname or "")
+        ):
+            raise ValueError(f"base_url must be an https URL, got {base_url!r}")
+        if max_attempts < 1:
+            raise ValueError("max_attempts must be at least 1")
+        self.name = name
+        self.base_url = base_url.rstrip("/")
+        self._scheme = parts.scheme
+        self._host = parts.netloc.lower()
+        self._token = token
+        self._session = session or requests.Session()
+        self._owns_session = session is None
+        self._verify = verify
+        self._timeout = timeout
+        self._max_attempts = max_attempts
+        self._backoff = backoff
+        self._max_backoff = max_backoff
+        self._max_retry_after = max_retry_after
+        self._sleep = sleep
+
+    def close(self) -> None:
+        """Close the underlying session if this client created it."""
+        if self._owns_session:
+            self._session.close()
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        self.close()
+
+    def url(self, path: str, params: Mapping[str, str] | None = None) -> str:
+        """Absolute URL for ``path`` with ``params`` percent-encoded.
+
+        ``path`` may be a full URL (an ``@odata.nextLink``); it must use this client's
+        scheme and host, so a token never travels anywhere else.
+        """
+        if "://" in path:
+            parts = urlsplit(path)
+            if parts.scheme != self._scheme or parts.netloc.lower() != self._host:
+                raise ApiError(
+                    f"{self.name}: refusing to send a token to {parts.scheme}://{parts.netloc}"
+                )
+            url = path
+        else:
+            url = f"{self.base_url}/{path.lstrip('/')}"
+        if params:
+            url += ("&" if "?" in url else "?") + urlencode(params, quote_via=quote)
+        return url
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: Mapping[str, str] | None = None,
+        headers: Mapping[str, str] | None = None,
+        json_body: Any = None,
+        form: Mapping[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """Send one request and return the JSON object it responds with."""
+        url = self.url(path, params)
+        response = self._send(method, url, headers, json_body=json_body, form=form)
+        try:
+            body = response.json()
+        except ValueError:
+            raise ApiError(
+                f"{self.name}: {method} {_path(url)} did not return JSON",
+                status=response.status_code,
+            ) from None
+        if not isinstance(body, dict):
+            raise ApiError(f"{self.name}: {method} {_path(url)} did not return a JSON object")
+        return body
+
+    def get(
+        self,
+        path: str,
+        *,
+        params: Mapping[str, str] | None = None,
+        headers: Mapping[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """GET ``path`` and return the JSON object it responds with."""
+        return self.request("GET", path, params=params, headers=headers)
+
+    def post(
+        self,
+        path: str,
+        body: Any,
+        *,
+        params: Mapping[str, str] | None = None,
+        headers: Mapping[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """POST ``body`` as JSON to ``path`` and return the JSON object it responds with."""
+        return self.request("POST", path, params=params, headers=headers, json_body=body)
+
+    def get_all(
+        self,
+        path: str,
+        *,
+        params: Mapping[str, str] | None = None,
+        headers: Mapping[str, str] | None = None,
+        next_link: str = "@odata.nextLink",
+    ) -> Iterator[dict[str, Any]]:
+        """Yield every item of a paged collection, following ``next_link``.
+
+        Graph and Defender use ``@odata.nextLink``; Azure Resource Manager and Key Vault
+        use ``nextLink``. Pages are fetched only as items are consumed.
+        """
+        page = self.get(path, params=params, headers=headers)
+        while True:
+            items = page.get("value")
+            if not isinstance(items, list):
+                raise ApiError(f"{self.name}: response has no 'value' array")
+            yield from (item for item in items if isinstance(item, dict))
+            link = page.get(next_link)
+            if not isinstance(link, str) or not link:
+                return
+            page = self.get(link, headers=headers)
+
+    def _send(
+        self,
+        method: str,
+        url: str,
+        headers: Mapping[str, str] | None,
+        *,
+        json_body: Any = None,
+        form: Mapping[str, str] | None = None,
+    ) -> requests.Response:
+        attempt = 0
+        while True:
+            attempt += 1
+            request_headers = {"Accept": "application/json", "User-Agent": USER_AGENT}
+            if self._token is not None:
+                request_headers["Authorization"] = f"Bearer {self._token()}"
+            request_headers.update(headers or {})
+            try:
+                response = self._session.request(
+                    method,
+                    url,
+                    headers=request_headers,
+                    json=json_body,
+                    data=form,
+                    timeout=self._timeout,
+                    verify=self._verify,
+                    allow_redirects=False,
+                )
+            except (requests.ConnectionError, requests.Timeout) as exc:
+                if attempt >= self._max_attempts:
+                    raise ApiError(
+                        f"{self.name}: {method} {_path(url)} failed after {attempt} attempts: "
+                        f"{type(exc).__name__}"
+                    ) from None
+                self._wait(attempt, None, type(exc).__name__)
+                continue
+            except requests.RequestException as exc:
+                raise ApiError(f"{self.name}: {method} {_path(url)} failed: {exc}") from None
+
+            if 200 <= response.status_code < 300:
+                return response
+            if response.status_code in RETRY_STATUSES and attempt < self._max_attempts:
+                self._wait(attempt, retry_after_seconds(response), f"HTTP {response.status_code}")
+                continue
+            raise error_from_response(self.name, response)
+
+    def _wait(self, attempt: int, retry_after: float | None, reason: str) -> None:
+        # A server-directed Retry-After wins over the backoff (retrying earlier just
+        # throttles again), capped so a broken server cannot stall the run.
+        if retry_after is not None:
+            delay = min(self._max_retry_after, retry_after)
+        else:
+            delay = min(self._max_backoff, self._backoff * 2 ** (attempt - 1))
+            delay += random.uniform(0, self._backoff / 2)
+        log.warning(
+            "%s: %s on attempt %d of %d, retrying in %.1fs",
+            self.name,
+            reason,
+            attempt,
+            self._max_attempts,
+            delay,
+        )
+        self._sleep(delay)
+
+
+def retry_after_seconds(response: requests.Response) -> float | None:
+    """Seconds requested by a Retry-After header (delta-seconds or HTTP date), else None."""
+    value = response.headers.get("Retry-After", "").strip()
+    if not value:
+        return None
+    if value.isdigit():
+        return float(value)
+    try:
+        when = email.utils.parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=UTC)
+    return max(0.0, (when - datetime.now(UTC)).total_seconds())
+
+
+def error_from_response(name: str, response: requests.Response) -> ApiError:
+    """Build an ApiError from a failed response, using the service's error body when present.
+
+    Graph, Defender, ARM and Key Vault reply ``{"error": {"code", "message"}}``; the Entra
+    token endpoint replies ``{"error": "<code>", "error_description": "..."}``.
+    """
+    code: str | None = None
+    message: str | None = None
+    request_id: str | None = None
+    try:
+        body = response.json()
+    except ValueError:
+        body = None
+    if isinstance(body, dict) and isinstance(body.get("error"), dict):
+        error = body["error"]
+        code = error.get("code") if isinstance(error.get("code"), str) else None
+        message = error.get("message") if isinstance(error.get("message"), str) else None
+        inner = error.get("innerError")
+        if isinstance(inner, dict) and isinstance(inner.get("request-id"), str):
+            request_id = inner["request-id"]
+    elif isinstance(body, dict) and isinstance(body.get("error"), str):
+        code = body["error"]
+        description = body.get("error_description")
+        if isinstance(description, str) and description.strip():
+            # The first line carries the AADSTS code and the reason; the rest is trace ids.
+            message = description.strip().splitlines()[0]
+    request_id = (
+        request_id or response.headers.get("request-id") or response.headers.get("x-ms-request-id")
+    )
+
+    status = response.status_code
+    detail = _readable(message) if message else ""
+    text = f"{name}: HTTP {status}"
+    if code:
+        text += f" {code}"
+    text += f": {detail or response.reason or 'request failed'}"
+    if request_id:
+        text += f" (request-id {request_id})"
+    return ApiError(
+        text, status=status, code=code, request_id=request_id, hint=_hint(status, text.lower())
+    )
+
+
+def _readable(message: str) -> str:
+    """One readable line from a service error message.
+
+    Some services put a JSON document inside the message (Graph's PIM errors, Intune,
+    which nests two deep); those are unwrapped to their inner code and message. Line
+    breaks are flattened, and the result is capped so one error cannot flood a terminal.
+    """
+    codes: list[str] = []
+    text = message.strip()
+    for _ in range(3):
+        if not text.startswith("{"):
+            break
+        try:
+            inner = json.loads(text)
+        except ValueError:
+            break
+        if not isinstance(inner, dict):
+            break
+        code = inner.get("errorCode") or inner.get("ErrorCode") or inner.get("code")
+        if isinstance(code, str) and code:
+            codes.append(code)
+        found = inner.get("message") or inner.get("Message")
+        if not isinstance(found, str):
+            text = ""
+            break
+        text = found.strip()
+    flat = " ".join(text.split())
+    readable = ": ".join([*codes, flat] if flat else codes)
+    return readable if len(readable) <= 400 else readable[:397] + "..."
+
+
+def _hint(status: int, text: str) -> str | None:
+    if status == 403 and "suspended" in text:
+        return "the service is suspended in this tenant, usually because its licence or trial ended"
+    if status == 403 and "client address is not authorized" in text:
+        return "the resource's firewall does not allow this machine's IP address"
+    if status in {401, 403} and ("forbidden" in text or "permission" in text):
+        return "the token was accepted but lacks the permission this call needs"
+    return {
+        401: "the API rejected the token; check its audience, tenant and expiry",
+        403: "the signed-in identity lacks a role or permission for this call",
+    }.get(status)
+
+
+def _is_local(host: str) -> bool:
+    if host == "localhost":
+        return True
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return address.is_loopback or address.is_link_local
+
+
+def _path(url: str) -> str:
+    return urlsplit(url).path

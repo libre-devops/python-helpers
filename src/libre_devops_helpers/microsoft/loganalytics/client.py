@@ -1,0 +1,117 @@
+"""Run KQL against a Log Analytics (or Sentinel) workspace through the query API.
+
+Access rests on Azure RBAC on the workspace (Log Analytics Reader is enough), not on
+token scopes. The workspace is named by its workspace id (the GUID the portal calls the
+"Workspace ID"), not by its resource id.
+"""
+
+from __future__ import annotations
+
+from datetime import timedelta
+from typing import Any, Self
+
+import requests
+
+from libre_devops_helpers.core.auth import TokenProvider, token_source
+from libre_devops_helpers.core.errors import ApiError, LdoError
+from libre_devops_helpers.core.http import ApiClient
+from libre_devops_helpers.core.tables import QueryResult
+from libre_devops_helpers.core.util import is_guid
+from libre_devops_helpers.microsoft.clouds import PUBLIC
+from libre_devops_helpers.microsoft.config import Profile
+
+
+class LogAnalyticsClient:
+    """Log Analytics queries. Close it (or use ``with``) when done."""
+
+    def __init__(self, api: ApiClient) -> None:
+        self.api = api
+
+    @classmethod
+    def create(
+        cls,
+        tokens: TokenProvider,
+        tenant_id: str,
+        *,
+        api_url: str = PUBLIC.log_analytics_url,
+        verify: bool | str = True,
+        session: requests.Session | None = None,
+    ) -> LogAnalyticsClient:
+        """A client for ``tenant_id`` that takes its tokens from ``tokens``."""
+        api = ApiClient(
+            api_url,
+            token_source(tokens, api_url, tenant_id),
+            name="Log Analytics",
+            verify=verify,
+            session=session,
+            # A query can legitimately run for minutes; the server caps it at 10.
+            timeout=600.0,
+        )
+        return cls(api)
+
+    @classmethod
+    def for_profile(
+        cls,
+        profile: Profile,
+        tokens: TokenProvider,
+        *,
+        verify: bool | str = True,
+        session: requests.Session | None = None,
+    ) -> LogAnalyticsClient:
+        """A client for a configured profile's tenant, in the profile's cloud."""
+        return cls.create(
+            tokens,
+            profile.tenant_id,
+            api_url=profile.cloud.log_analytics_url,
+            verify=verify,
+            session=session,
+        )
+
+    def close(self) -> None:
+        self.api.close()
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        self.close()
+
+    def query(
+        self, workspace_id: str, query: str, *, timespan: timedelta | None = None
+    ) -> QueryResult:
+        """Run ``query`` and return its first table.
+
+        ``timespan`` bounds the query from now backwards, on top of any time filter in
+        the query itself. A partial result comes back with the service's error in
+        ``warnings`` rather than failing.
+        """
+        if not is_guid(workspace_id):
+            raise LdoError(
+                f"not a Log Analytics workspace id: {workspace_id!r}",
+                hint="use the workspace's Workspace ID (a GUID), not its resource id",
+            )
+        if not query.strip():
+            raise LdoError("the Log Analytics query is empty")
+        body: dict[str, Any] = {"query": query}
+        if timespan is not None:
+            body["timespan"] = f"PT{int(timespan.total_seconds())}S"
+        data = self.api.post(f"/v1/workspaces/{workspace_id.strip().lower()}/query", body)
+        tables = data.get("tables")
+        warnings: list[str] = []
+        error = data.get("error")
+        if isinstance(error, dict):
+            detail = str(error.get("message") or error.get("code") or "partial result")
+            if not isinstance(tables, list) or not tables:
+                raise ApiError(f"Log Analytics: {detail}", code=str(error.get("code") or ""))
+            warnings.append(detail)
+        if not isinstance(tables, list) or not tables or not isinstance(tables[0], dict):
+            return QueryResult((), (), warnings=tuple(warnings))
+        table = tables[0]
+        columns = [
+            str(column.get("name"))
+            for column in table.get("columns") or []
+            if isinstance(column, dict)
+        ]
+        rows = [row for row in table.get("rows") or [] if isinstance(row, list)]
+        result = QueryResult.from_columns(columns, rows)
+        return QueryResult(result.columns, result.rows, warnings=tuple(warnings))

@@ -1,0 +1,9 @@
+# The names this project goes by. Change them with 'just rebrand', never by hand: the
+# recipe rewrites the code, tests and docs to match, then updates this file.
+display_name = "Libre DevOps Helpers"
+distribution = "libre-devops-helpers"
+package = "libre_devops_helpers"
+command = "ldo"
+env_prefix = "LDO"
+error_class = "LdoError"
+repository = "https://github.com/libre-devops/python-helpers"

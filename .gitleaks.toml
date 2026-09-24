@@ -1,0 +1,15 @@
+# Secret scanning: gitleaks' default rules, plus the public values this code holds on
+# purpose. Keep each allowance narrow, so a real secret beside one is still caught.
+title = "libre-devops-helpers"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Public Microsoft cloud endpoints and first-party application ids"
+regexTarget = "match"
+regexes = [
+    # The cloud table's Key Vault DNS suffix, which the generic rule reads as a key.
+    '''keyvault_suffix="''',
+    '''[A-Z_]+_APP_ID = "[0-9a-f-]{36}"''',
+]
