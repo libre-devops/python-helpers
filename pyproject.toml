@@ -1,6 +1,6 @@
 [project]
 name = "libre-devops-helpers"
-version = "0.2.0"
+version = "0.2.1"
 description = "Libre DevOps Helpers: importable helpers and a fast, read-only CLI for Azure, Entra ID, Defender, Intune, PIM, Key Vault and Log Analytics, also shipped as a container image."
 readme = "README.md"
 license = "MIT"
