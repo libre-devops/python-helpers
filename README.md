@@ -918,9 +918,10 @@ Every pull request and push to `main` runs `.github/workflows/ci.yml`:
 | Coverage | line and branch coverage, failing below the floor in `pyproject.toml` (`fail_under`), with the report in the job summary and the total written for the badge |
 | Build | builds the sdist and wheel once, installs the wheel in a clean environment, and keeps both as the run's artifact |
 
-`.github/workflows/container.yml` builds both images on every pull request and push, runs
-them (the version, a command's help, a non-root user, and for the default image a
-signed-out `az whoami` that must fail cleanly), and scans them with a checksum-pinned Trivy. The `slim` image
+`.github/workflows/container.yml` builds both images for `amd64` and `arm64` on every pull
+request and push. It runs the native build (the version, a command's help, a non-root user,
+and for the default image a signed-out `az whoami` that must fail cleanly) and scans it with
+a checksum-pinned Trivy. The `slim` image
 fails on any high or critical vulnerability that has a fix; the default image fails on a
 fixed critical one and reports the rest, since the Azure CLI inside it pins its own
 dependencies. Findings with a fix go to the Security tab. Those without one, mostly Debian

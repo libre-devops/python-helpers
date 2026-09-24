@@ -28,9 +28,21 @@ COPY src ./src
 RUN UV_PROJECT_ENVIRONMENT=/opt/ldo uv sync --locked --no-dev --no-editable
 
 # Build the Azure CLI, locked in container/azure-cli, into its own environment at /opt/az.
+# Its bytecode is compiled in the next stage instead: the Azure CLI is over 12,000 files,
+# and compiling them under emulation, for another architecture's image, takes longer
+# than a build may run.
 FROM build AS build-az
 COPY container/azure-cli/pyproject.toml container/azure-cli/uv.lock /src/azure-cli/
-RUN UV_PROJECT_ENVIRONMENT=/opt/az uv sync --locked --no-dev --project /src/azure-cli
+RUN UV_PROJECT_ENVIRONMENT=/opt/az UV_COMPILE_BYTECODE=0 \
+    uv sync --locked --no-dev --project /src/azure-cli
+
+# The Azure CLI's bytecode, compiled on the build machine's own platform. Bytecode is the
+# same on every architecture for one Python version, and this is the same base image, so
+# the result is what compiling in place would give, in seconds rather than an hour.
+# unchecked-hash: the image never changes, so Python need not check the sources.
+FROM --platform=$BUILDPLATFORM docker.io/library/python:3.14-slim-trixie@sha256:caaf356f40667c496d405780745b9ac25771c189a51dfcc42430d531ea09f8a2 AS compile-az
+COPY --from=build-az /opt/az /opt/az
+RUN python -W ignore -m compileall -q -j 0 --invalidation-mode unchecked-hash /opt/az/lib
 
 # Runtime: the same base, patched, with a non-root user and the tool on PATH.
 FROM docker.io/library/python:3.14-slim-trixie@sha256:caaf356f40667c496d405780745b9ac25771c189a51dfcc42430d531ea09f8a2 AS runtime
@@ -64,7 +76,7 @@ FROM runtime AS tool
 # The default target: the tool with the Azure CLI, for signing in as yourself (the
 # default "azure-cli" profiles) and 'ldo az'.
 FROM runtime AS az
-COPY --from=build-az /opt/az /opt/az
+COPY --from=compile-az /opt/az /opt/az
 USER root
 # A wrapper rather than a link, so az always runs on its own environment's Python.
 RUN printf '#!/bin/sh\nexec /opt/az/bin/python -m azure.cli "$@"\n' > /usr/local/bin/az \

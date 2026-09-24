@@ -5,6 +5,15 @@ All notable changes to libre-devops-helpers are recorded here. The project follo
 
 ## 0.2.1
 
+### Fixed
+
+- The 0.2.0 release stopped before publishing the default image and the GitHub release:
+  its arm64 build compiled the Azure CLI's 12,000 files under emulation and ran out of
+  time. The Azure CLI's bytecode is now compiled on the build machine's own platform (it
+  is the same on every architecture), in seconds. Only `0.2.0-slim` was published.
+- Every push and pull request now builds both architectures, so a build that fails only
+  under emulation is caught before a release.
+
 ### Security
 
 - The default image's Azure CLI now runs cryptography 50.0.1 (CVE-2026-69247,

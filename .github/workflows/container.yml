@@ -235,14 +235,20 @@ jobs:
             echo "changed=true" >> "${GITHUB_OUTPUT}"
           fi
 
+      # Every platform is built on every change, not only for a release, so a build that
+      # only breaks under emulation is found before a release depends on it.
       - name: Set up emulation for other architectures
-        if: steps.changed.outputs.changed == 'true'
+        if: >-
+          steps.plan.outputs.skip != 'true' &&
+          (steps.plan.outputs.publish != 'true' || steps.changed.outputs.changed == 'true')
         run: |
           sudo apt-get update --quiet
           sudo apt-get install --yes --quiet qemu-user-static
 
       - name: Build for every platform
-        if: steps.changed.outputs.changed == 'true'
+        if: >-
+          steps.plan.outputs.skip != 'true' &&
+          (steps.plan.outputs.publish != 'true' || steps.changed.outputs.changed == 'true')
         env:
           VARIANT: ${{ matrix.variant }}
           VERSION: ${{ steps.version.outputs.version }}
