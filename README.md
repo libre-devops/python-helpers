@@ -62,7 +62,7 @@ arguments, stdin, a text file, or a column of a CSV or Excel workbook.
 ## Install
 
 ```bash
-uv tool install git+https://github.com/libre-devops/python-helpers@v0.3.0
+uv tool install git+https://github.com/libre-devops/python-helpers@v0.4.0
 ```
 
 Or run the container image, which has the Azure CLI inside:
