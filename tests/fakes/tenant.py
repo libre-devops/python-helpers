@@ -5,6 +5,7 @@ with a fake Azure CLI, so nothing reaches the network.
 """
 
 import json
+import re
 from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, unquote, urlsplit
 
@@ -39,6 +40,18 @@ client_id = "{CLIENT_ID}"
 """
 
 runner = CliRunner()
+
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
+_BOX = re.compile(r"[\u2500-\u257f]")
+
+
+def usage_error(result) -> str:
+    """A usage error's text however rich laid it out: no colours, panel or line breaks.
+
+    Typer forces a styled terminal when GITHUB_ACTIONS is set, so in CI the message is
+    highlighted and wrapped inside a panel.
+    """
+    return " ".join(_BOX.sub(" ", _ANSI.sub("", result.output)).split())
 
 
 def iso(days: float) -> str:

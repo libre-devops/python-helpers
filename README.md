@@ -1,11 +1,30 @@
+<div align="center">
+
+<a href="https://libredevops.org">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://libredevops.org/assets/libre-devops-white.png">
+    <img alt="Libre DevOps" src="https://libredevops.org/assets/libre-devops-black.png" width="320">
+  </picture>
+</a>
+
 # Libre DevOps Helpers
 
+`ldo`: importable Python helpers and a fast CLI for day-to-day DevOps and security work.
+
 [![Lint and Test](https://github.com/libre-devops/python-helpers/actions/workflows/ci.yml/badge.svg)](https://github.com/libre-devops/python-helpers/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/libre-devops/python-helpers/badges/coverage.json)](https://github.com/libre-devops/python-helpers/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/libre-devops/python-helpers/actions/workflows/codeql.yml/badge.svg)](https://github.com/libre-devops/python-helpers/actions/workflows/codeql.yml)
 [![Container](https://github.com/libre-devops/python-helpers/actions/workflows/container.yml/badge.svg)](https://github.com/libre-devops/python-helpers/actions/workflows/container.yml)
+
+[![Release](https://img.shields.io/github/v/release/libre-devops/python-helpers?label=release&color=1793D1)](https://github.com/libre-devops/python-helpers/releases)
+[![Container images](https://img.shields.io/badge/ghcr.io-python--helpers-2496ED?logo=docker&logoColor=white)](https://github.com/libre-devops/python-helpers/pkgs/container/python-helpers)
+[![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-3776AB?logo=python&logoColor=white)](pyproject.toml)
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
 
-`ldo`: importable Python helpers and a fast CLI for day-to-day DevOps and security work.
+</div>
+
+---
+
 The Python sibling of the [LibreDevOpsHelpers](https://github.com/libre-devops/powershell-helpers)
 PowerShell module.
 
@@ -38,6 +57,8 @@ Azure CLI's active account.
 The whole project can be renamed for your organisation with one command; see
 [Rebranding](#rebranding).
 
+---
+
 ## Requirements
 
 - Python 3.11 or later, and [uv](https://docs.astral.sh/uv/)
@@ -46,6 +67,8 @@ The whole project can be renamed for your organisation with one command; see
   which has it inside
 - [just](https://just.systems/) is optional: `uv sync` installs it into the project
   environment (the `rust-just` package), so `uv run just ...` always works
+
+---
 
 ## Install
 
@@ -69,6 +92,8 @@ or docker.
 Run `ldo` on its own, or `ldo welcome`, for a greeting and the next step. The banner only
 appears on a terminal, so scripts and CI never see it; set `LDO_NO_BANNER=1` to turn it off
 there too, or `NO_COLOR=1` to keep it without colour.
+
+---
 
 ## Container images
 
@@ -152,6 +177,8 @@ the REST APIs with `requests`, and its own credentials cover client secrets, wor
 identity, managed identity, and browser or device code sign-in without `az`. The Azure CLI
 is only there for the default sign-in, which reuses the session you already have, so it
 stays an outside program: on your `PATH`, or inside the default image.
+
+---
 
 ## Configuration
 
@@ -359,6 +386,8 @@ client_id = "<the app id printed above>"
 ```
 
 Graph insists on a ReadWrite scope even to list PIM requests; `ldo` still only ever reads.
+
+---
 
 ## Commands
 
@@ -651,6 +680,8 @@ type-checks the whole of it and creates nothing: the authority the offline check
 
 Code 3 lets a scheduled job alert on findings while still failing loudly on errors.
 
+---
+
 ## ServiceNow
 
 The `snow` commands sign in to a ServiceNow instance as you, and read from it:
@@ -748,6 +779,8 @@ If it is not offered there, sign in to the instance as admin and install it from
 System Applications > All Available Applications, with its demo data if you want records
 to work with. Then `ldo snow instance` shows it installed.
 
+---
+
 ## Permissions
 
 Commands run with the permissions of the profile's credential. The Azure CLI's delegated
@@ -790,6 +823,8 @@ The signature is **not** verified: this answers "is this the token I meant to ge
 this token genuine?". The token value is never printed unless you pass `--raw`, and never
 logged.
 
+---
+
 ## Rebranding
 
 To run this inside a company under the company's own name, rename it with one command.
@@ -818,7 +853,10 @@ the running tool shows come from one module (`core/brand.py`). After rewriting, 
 refreshes the lock file and runs every check. `LICENSE` is never changed: the MIT licence
 requires its copyright and permission notice to stay with the code. A test rebrands a copy of
 the repository and runs the copy's whole test suite, so the rename keeps working as the code
-grows.
+grows. The README's logo, badges and footer point at Libre DevOps and this repository's
+GitHub pages, so replace them with your own by hand.
+
+---
 
 ## Using it as a library
 
@@ -865,6 +903,8 @@ with EntraClient.for_profile(profile, tokens) as entra, XdrClient.for_profile(pr
 Library code raises `LdoError` subclasses and never exits; only the CLI turns errors into
 messages and exit codes.
 
+---
+
 ## CI/CD
 
 Every pull request and push to `main` runs `.github/workflows/ci.yml`:
@@ -875,7 +915,7 @@ Every pull request and push to `main` runs `.github/workflows/ci.yml`:
 | Lint | `ruff check` and `ruff format --check`, after `uv sync --locked` |
 | Dependency audit | `pip-audit` over the locked, hashed dependency tree |
 | Test | pytest on Python 3.11 to 3.14 on Linux, and 3.13 on Windows and macOS, including the rebrand test |
-| Coverage | line and branch coverage, failing below the floor in `pyproject.toml` (`fail_under`), with the report in the job summary |
+| Coverage | line and branch coverage, failing below the floor in `pyproject.toml` (`fail_under`), with the report in the job summary and the total written for the badge |
 | Build | builds the sdist and wheel once, installs the wheel in a clean environment, and keeps both as the run's artifact |
 
 `.github/workflows/container.yml` builds both images on every pull request and push, runs
@@ -885,6 +925,10 @@ fails on any high or critical vulnerability that has a fix; the default image fa
 fixed critical one and reports the rest, since the Azure CLI inside it pins its own
 dependencies. Findings
 go to the Security tab.
+
+After a passing run on `main`, `.github/workflows/badges.yml` commits the coverage total
+to the `badges` branch as a shields.io endpoint file, which is where the README's coverage
+badge reads it; nothing else lives on that branch.
 
 CodeQL scans the Python code and the workflows on every change and weekly; Dependency
 Review comments on pull requests that change dependencies. Third-party actions are pinned
@@ -920,6 +964,8 @@ both container images for every platform, with attestations, and only then publi
 files the gate built (not a rebuild) as a GitHub release with `SHA256SUMS`, after checking
 the tag matches the version. A release therefore never exists without its images.
 
+---
+
 ## Development
 
 ```bash
@@ -943,6 +989,17 @@ so an hour-long watch runs in microseconds. Runtime dependencies are kept to `re
 See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request, and
 [SECURITY.md](SECURITY.md) to report a vulnerability.
 
+---
+
 ## Licence
 
 [MIT](LICENSE)
+
+---
+
+<div align="center">
+<sub>
+Part of <a href="https://libredevops.org">Libre DevOps</a>. Everything we publish is open and
+provided as-is; review and test it against your own requirements before production use.
+</sub>
+</div>

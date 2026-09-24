@@ -176,6 +176,30 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+      # The total as a shields.io endpoint; badges.yml publishes it for the README badge
+      # after a push to main.
+      - name: Write the coverage badge
+        shell: bash
+        run: |
+          total="$(uv run coverage report --format=total --precision=1 --fail-under=0)"
+          python3 - "$total" > coverage-badge.json <<'PY'
+          import json
+          import sys
+
+          total = float(sys.argv[1])
+          colour = next(c for floor, c in ((90, "brightgreen"), (80, "green"), (70, "yellow"), (0, "red")) if total >= floor)
+          print(json.dumps({"schemaVersion": 1, "label": "coverage", "message": f"{total:.1f}%", "color": colour}))
+          PY
+          cat coverage-badge.json
+
+      - name: Keep the badge
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-badge
+          path: coverage-badge.json
+          if-no-files-found: error
+          retention-days: 14
+
   build:
     name: Build
     runs-on: ubuntu-latest

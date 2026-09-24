@@ -1,7 +1,7 @@
 import json
 
 from fakes.http import routes
-from fakes.tenant import invoke, run, runner, runtime
+from fakes.tenant import invoke, run, runner, runtime, usage_error
 from libre_devops_helpers.cli import app
 
 GROUP_ID = "55555555-5555-5555-5555-555555555555"
@@ -112,7 +112,7 @@ def test_group_members_of_one_kind(config_file):
 def test_group_members_rejects_an_unknown_kind(config_file):
     result = run(config_file, routes({}), ["entra", "group-members", "Ring 1", "--kind", "robot"])
     assert result.exit_code == 2
-    assert "--kind must be one of" in result.output
+    assert "--kind must be one of" in usage_error(result)
 
 
 def test_user_groups_for_a_upn(config_file):

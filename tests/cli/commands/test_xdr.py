@@ -3,7 +3,7 @@ from datetime import UTC, datetime, timedelta
 from urllib.parse import unquote
 
 from fakes.http import json_body, routes
-from fakes.tenant import invoke, run, runner, runtime
+from fakes.tenant import invoke, run, runner, runtime, usage_error
 from libre_devops_helpers.cli import app
 
 MACHINE_ID = "a" * 40
@@ -179,4 +179,4 @@ def test_a_timespan_needs_graph(config_file):
     args = ["xdr", "hunt", "DeviceInfo", "--endpoint", "--timespan", "7d"]
     result = run(config_file, routes({}), args)
     assert result.exit_code == 2
-    assert "--timespan is not available with --endpoint" in result.output
+    assert "--timespan is not available with --endpoint" in usage_error(result)

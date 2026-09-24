@@ -1,7 +1,7 @@
 import json
 
 from fakes.http import routes
-from fakes.tenant import invoke, run
+from fakes.tenant import invoke, run, usage_error
 
 
 def test_keyvault_expiry_finds_vaults_through_resource_graph(config_file, tenant):
@@ -41,4 +41,4 @@ def test_expiry_needs_a_vault_and_a_known_kind(config_file):
     assert "no vaults given" in str(result.exception)
     result = run(config_file, routes({}), ["keyvault", "expiry", "kv-app", "--kind", "passwords"])
     assert result.exit_code == 2
-    assert "--kind must be one of" in result.output
+    assert "--kind must be one of" in usage_error(result)

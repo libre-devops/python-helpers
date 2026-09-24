@@ -2,7 +2,7 @@ import json
 
 from fakes.http import routes
 from fakes.ids import OTHER_SUBSCRIPTION, SUBSCRIPTION, TENANT
-from fakes.tenant import invoke, run
+from fakes.tenant import invoke, run, usage_error
 
 SECURITY = f"/subscriptions/{SUBSCRIPTION}/providers/Microsoft.Security"
 SUBSCRIPTIONS = (
@@ -96,7 +96,7 @@ def test_recommendations_filter_by_severity_across_subscriptions(config_file):
 def test_recommendations_reject_an_unknown_severity(config_file):
     result = run(config_file, routes({}), ["azure", "recommendations", "--severity", "urgent"])
     assert result.exit_code == 2
-    assert "--severity must be high, medium or low" in result.output
+    assert "--severity must be high, medium or low" in usage_error(result)
 
 
 def test_defender_plans_show_which_are_on(config_file):

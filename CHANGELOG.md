@@ -26,6 +26,8 @@ All notable changes to libre-devops-helpers are recorded here. The project follo
   Azure CLI's lock file current.
 - `just image`, `image-slim`, `image-run` and `image-scan`, and `just coverage`.
 - Line and branch coverage in CI, failing below a floor set in `pyproject.toml`.
+  The README's coverage badge comes from CI too: `badges.yml` publishes the total to a
+  `badges` branch after each passing run on main, with no third-party service.
 - Signing in again when a sign-in lapses. When the Azure CLI's refresh token has run out
   (a sign-in frequency policy, 90 days unused, a password change, a revoked session, new
   MFA), the error now names the cause (`ReauthRequired`, with the Entra ID code
@@ -88,10 +90,14 @@ All notable changes to libre-devops-helpers are recorded here. The project follo
   concern; a test keeps the two trees in step. Many more CLI paths are tested.
 - A release now publishes the container images before the GitHub release, so a release
   never exists without them.
+- The README opens with the Libre DevOps logo and centred badges, as the organisation's
+  profile does, with a rule between sections.
 
 ### Fixed
 
 - `just use` and `just token` ran commands that had moved under `az` and `entra`.
+- Four CLI tests failed in GitHub Actions, where Typer styles and wraps usage errors; they
+  now compare the message's plain text.
 
 ### Security
 

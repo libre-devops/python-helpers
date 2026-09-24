@@ -1,0 +1,83 @@
+name: Badges
+
+# Publishes the README's coverage badge. After 'Lint and Test' passes on a push to main,
+# the coverage total it wrote (a shields.io endpoint file) is committed to the 'badges'
+# branch, which holds nothing else; the README reads it through img.shields.io/endpoint.
+# No third-party service is involved. This is a workflow of its own because the release
+# calls ci.yml with read-only permissions, and a job there cannot ask for more.
+on:
+  workflow_run:
+    workflows: ["Lint and Test"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: badges
+  cancel-in-progress: false
+
+jobs:
+  coverage:
+    name: Coverage badge
+    # Only a passing run from a push to this repository's main: never a pull request.
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      # Pushing to the badges branch, and reading the triggering run's artifact.
+      contents: write
+      actions: read
+
+    steps:
+      - name: Fetch the badge
+        uses: actions/download-artifact@v8
+        with:
+          name: coverage-badge
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      # The file is published as it is, so check it is exactly the shape expected.
+      - name: Check the badge
+        run: |
+          python3 - <<'PY'
+          import json
+          import re
+
+          with open("coverage-badge.json", encoding="utf-8") as handle:
+              badge = json.load(handle)
+          assert set(badge) == {"schemaVersion", "label", "message", "color"}, badge
+          assert badge["schemaVersion"] == 1 and badge["label"] == "coverage", badge
+          assert re.fullmatch(r"\d{1,3}\.\d%", badge["message"]), badge
+          assert badge["color"] in {"brightgreen", "green", "yellow", "red"}, badge
+          PY
+
+      - name: Publish to the badges branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          remote="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          if git ls-remote --exit-code --heads "$remote" badges > /dev/null; then
+            git clone --quiet --depth 1 --branch badges "$remote" "$RUNNER_TEMP/badges"
+          else
+            git init --quiet --initial-branch badges "$RUNNER_TEMP/badges"
+            git -C "$RUNNER_TEMP/badges" remote add origin "$remote"
+          fi
+          cp coverage-badge.json "$RUNNER_TEMP/badges/coverage.json"
+          cd "$RUNNER_TEMP/badges"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add coverage.json
+          if git diff --cached --quiet; then
+            echo "coverage unchanged"
+            exit 0
+          fi
+          git commit --quiet --message "Coverage $(python3 -c 'import json; print(json.load(open("coverage.json"))["message"])') at ${SHA:0:7}"
+          git push --quiet origin badges
