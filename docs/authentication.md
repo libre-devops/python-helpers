@@ -41,7 +41,7 @@ permissions:
   id-token: write
   contents: read
 steps:
-  - run: uv tool install git+https://github.com/libre-devops/python-helpers@v0.4.0
+  - run: uv tool install git+https://github.com/libre-devops/python-helpers@v0.4.1
   - run: ldo --config .github/ldo.toml entra app-credentials -p ci --expiring 30d
 ```
 
@@ -87,7 +87,7 @@ other accounts can read is refused, as ssh refuses a readable key. `keychain` on
 Linux needs the `keychain` extra:
 
 ```bash
-uv tool install "libre-devops-helpers[keychain] @ git+https://github.com/libre-devops/python-helpers@v0.4.0"
+uv tool install "libre-devops-helpers[keychain] @ git+https://github.com/libre-devops/python-helpers@v0.4.1"
 ```
 
 ## Your own app registration
