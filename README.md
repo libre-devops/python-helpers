@@ -17,6 +17,7 @@
 [![Container](https://github.com/libre-devops/python-helpers/actions/workflows/container.yml/badge.svg)](https://github.com/libre-devops/python-helpers/actions/workflows/container.yml)
 
 [![Release](https://img.shields.io/github/v/release/libre-devops/python-helpers?label=release&color=1793D1)](https://github.com/libre-devops/python-helpers/releases)
+[![PyPI](https://img.shields.io/pypi/v/libre-devops-helpers?label=pypi&logo=pypi&logoColor=white&color=3775A9)](https://pypi.org/project/libre-devops-helpers/)
 [![Container images](https://img.shields.io/badge/ghcr.io-python--helpers-2496ED?logo=docker&logoColor=white)](https://github.com/libre-devops/python-helpers/pkgs/container/python-helpers)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-3776AB?logo=python&logoColor=white)](pyproject.toml)
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
@@ -61,9 +62,19 @@ arguments, stdin, a text file, or a column of a CSV or Excel workbook.
 
 ## Install
 
+From [PyPI](https://pypi.org/project/libre-devops-helpers/):
+
 ```bash
-uv tool install git+https://github.com/libre-devops/python-helpers@v0.4.1
+uv tool install libre-devops-helpers     # the ldo command, in an environment of its own
+pipx install libre-devops-helpers        # the same, with pipx
+uv pip install libre-devops-helpers      # into the current environment, to use it as a library
+pip install libre-devops-helpers         # the same, with pip
+uv tool upgrade libre-devops-helpers     # later, to the newest release
 ```
+
+Add the `keychain` extra (`"libre-devops-helpers[keychain]"`) to keep sign-ins in the macOS
+Keychain or the Linux Secret Service. A tagged release installs straight from GitHub too:
+`uv tool install git+https://github.com/libre-devops/python-helpers@v0.4.1`.
 
 Or run the container image, which has the Azure CLI inside:
 `podman run --rm -it ghcr.io/libre-devops/python-helpers:latest --help`

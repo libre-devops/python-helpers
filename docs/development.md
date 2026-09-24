@@ -44,8 +44,9 @@ tab; the full scan is kept with each run.
 ## Releasing
 
 1. Set the version in `pyproject.toml` and `src/libre_devops_helpers/__init__.py` (a test
-   keeps them equal), run `just lock`, and turn `## Unreleased` in `CHANGELOG.md` into
-   `## <version>`.
+   keeps them equal), run `just lock`, turn `## Unreleased` in `CHANGELOG.md` into
+   `## <version>`, and move the pinned install lines in the docs to it (a test names any
+   left behind).
 2. Merge to `main` and let CI pass.
 3. `just release`: it checks the tree is clean and in step with `origin/main`, that the
    changelog has the version and the tag is new, then tags and pushes.

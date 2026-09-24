@@ -121,7 +121,10 @@ def test_install_lines_name_the_current_release():
     pinned = {
         found
         for page in PAGES
-        for found in re.findall(r"install [^\n]*@v(\d+\.\d+\.\d+)", page.read_text())
+        for found in re.findall(
+            rf"install [^\n]*(?:@v|{re.escape(brand.DISTRIBUTION)}==)(\d+\.\d+\.\d+)",
+            page.read_text(),
+        )
     }
     assert pinned == {version}
 

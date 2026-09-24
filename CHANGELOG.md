@@ -3,6 +3,13 @@
 All notable changes to libre-devops-helpers are recorded here. The project follows
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Changed
+
+- The README installs from PyPI (`uv tool install`, `pipx`, `uv pip` or `pip`), with a
+  PyPI badge; installing a tag from GitHub is still shown.
+
 ## 0.4.1
 
 ### Added
