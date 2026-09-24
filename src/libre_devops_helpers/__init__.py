@@ -1,4 +1,4 @@
-"""Libre DevOps Microsoft Helper: helpers and a CLI for Azure, Entra, Defender and more.
+"""Libre DevOps Helpers: helpers and a CLI for Azure, Entra, Defender and more.
 
 Subpackages, lowest layer first, in the style of the LibreDevOpsHelpers nested
 PowerShell modules:
@@ -20,4 +20,4 @@ Feature modules depend on ``core`` only; ``devices`` also uses ``entra``, ``xdr`
 caller's choice.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

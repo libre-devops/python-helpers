@@ -4,7 +4,8 @@ Built on requests. Retries are decided on the HTTP status code (408, 429, 5xx) a
 connection errors or timeouts, never on the wording of an error message. The bearer
 token is only ever sent to the client's own https host, and redirects are not followed.
 Every POST this package makes is a read-only query or a token request, so retrying
-one is safe.
+one is safe. A 401 is retried once with a fresh token, when the token source can drop
+the one it cached (``core.auth.BearerToken``).
 """
 
 from __future__ import annotations
@@ -36,7 +37,9 @@ class ApiClient:
     """JSON client for one API base URL, usually authenticated with a bearer token.
 
     ``token`` is called before every request, so a caching provider can refresh a token
-    close to expiry. Tokens go in the Authorization header only and are never logged.
+    close to expiry. If it also has a ``refresh()`` method, a 401 answer drops the cached
+    token and the request is sent once more with a new one: that covers a token revoked
+    or expired early. Tokens go in the Authorization header only and are never logged.
     With ``token=None`` no Authorization header is sent; only then may ``allow_http``
     permit a plain http base URL on a loopback or link-local host, which is what the
     managed identity endpoints use.
@@ -57,6 +60,7 @@ class ApiClient:
         max_retry_after: float = 120.0,
         sleep: Callable[[float], None] = time.sleep,
         allow_http: bool = False,
+        auth_scheme: str = "Bearer",
     ) -> None:
         parts = urlsplit(base_url)
         if not parts.netloc or parts.scheme not in {"https", "http"}:
@@ -72,6 +76,10 @@ class ApiClient:
         self._scheme = parts.scheme
         self._host = parts.netloc.lower()
         self._token = token
+        # "Bearer" for tokens; "Basic" when ``token`` returns base64 "user:password".
+        self._auth_scheme = auth_scheme
+        refresh = getattr(token, "refresh", None)
+        self._refresh_token: Callable[[], None] | None = refresh if callable(refresh) else None
         self._session = session or requests.Session()
         self._owns_session = session is None
         self._verify = verify
@@ -81,6 +89,15 @@ class ApiClient:
         self._max_backoff = max_backoff
         self._max_retry_after = max_retry_after
         self._sleep = sleep
+
+    def ensure_token(self) -> None:
+        """Get the token now, in this thread.
+
+        Call it on the main thread before fanning requests out to workers, so that a
+        credential which has to ask someone to sign in again asks there.
+        """
+        if self._token is not None:
+            self._token()
 
     def close(self) -> None:
         """Close the underlying session if this client created it."""
@@ -121,10 +138,17 @@ class ApiClient:
         headers: Mapping[str, str] | None = None,
         json_body: Any = None,
         form: Mapping[str, str] | None = None,
+        allow_empty: bool = False,
     ) -> dict[str, Any]:
-        """Send one request and return the JSON object it responds with."""
+        """Send one request and return the JSON object it responds with.
+
+        ``allow_empty`` accepts a success with no body (some actions answer 200 or 204
+        with nothing), returning ``{}`` for it.
+        """
         url = self.url(path, params)
         response = self._send(method, url, headers, json_body=json_body, form=form)
+        if allow_empty and not response.content.strip():
+            return {}
         try:
             body = response.json()
         except ValueError:
@@ -191,11 +215,12 @@ class ApiClient:
         form: Mapping[str, str] | None = None,
     ) -> requests.Response:
         attempt = 0
+        refreshed = False
         while True:
             attempt += 1
             request_headers = {"Accept": "application/json", "User-Agent": USER_AGENT}
             if self._token is not None:
-                request_headers["Authorization"] = f"Bearer {self._token()}"
+                request_headers["Authorization"] = f"{self._auth_scheme} {self._token()}"
             request_headers.update(headers or {})
             try:
                 response = self._session.request(
@@ -221,6 +246,13 @@ class ApiClient:
 
             if 200 <= response.status_code < 300:
                 return response
+            if response.status_code == 401 and self._refresh_token and not refreshed:
+                # Once only: a second 401 means the token is not the problem.
+                refreshed = True
+                attempt -= 1
+                log.info("%s: HTTP 401, retrying once with a new token", self.name)
+                self._refresh_token()
+                continue
             if response.status_code in RETRY_STATUSES and attempt < self._max_attempts:
                 self._wait(attempt, retry_after_seconds(response), f"HTTP {response.status_code}")
                 continue
@@ -299,9 +331,16 @@ def error_from_response(name: str, response: requests.Response) -> ApiError:
     text += f": {detail or response.reason or 'request failed'}"
     if request_id:
         text += f" (request-id {request_id})"
-    return ApiError(
-        text, status=status, code=code, request_id=request_id, hint=_hint(status, text.lower())
-    )
+    challenge = response.headers.get("WWW-Authenticate", "").lower()
+    if status == 401 and "insufficient_claims" in challenge:
+        # Continuous access evaluation: the token was revoked, or a policy changed.
+        hint: str | None = (
+            "the service revoked the token or wants a sign-in that meets a Conditional "
+            "Access policy (a claims challenge); sign in again"
+        )
+    else:
+        hint = _hint(status, text.lower())
+    return ApiError(text, status=status, code=code, request_id=request_id, hint=hint)
 
 
 def _readable(message: str) -> str:

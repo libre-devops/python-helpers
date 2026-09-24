@@ -90,7 +90,7 @@ jobs:
       # The locked, hashed dependency tree, runtime and dev, exactly as CI installs it.
       - name: Audit the locked dependencies for known vulnerabilities
         run: |
-          uv export --frozen --format requirements-txt --no-emit-project \
+          uv export --frozen --all-extras --format requirements-txt --no-emit-project \
             --output-file "$RUNNER_TEMP/requirements.txt"
           uvx "pip-audit==${PIP_AUDIT_VERSION}" --strict --disable-pip --require-hashes \
             --requirement "$RUNNER_TEMP/requirements.txt"
@@ -133,11 +133,54 @@ jobs:
       - name: Test
         run: uv run pytest
 
+  # Line and branch coverage on one platform, so the number is the same on every run.
+  # The floor (fail_under) lives in pyproject.toml, beside the rest of the coverage config.
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: true
+
+      - name: Install
+        run: uv sync --locked
+
+      - name: Test with coverage
+        run: uv run pytest --cov --cov-report=term-missing --cov-report=xml
+
+      - name: Summarise
+        if: always()
+        shell: bash
+        run: |
+          if [ -f .coverage ]; then
+            {
+              echo "## Coverage"
+              echo
+              uv run coverage report --format=markdown --fail-under=0
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage
+          path: coverage.xml
+          if-no-files-found: ignore
+          retention-days: 14
+
   build:
     name: Build
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [secrets, lint, audit, test]
+    needs: [secrets, lint, audit, test, coverage]
 
     steps:
       - name: Checkout

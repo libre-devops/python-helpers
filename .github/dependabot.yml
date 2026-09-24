@@ -34,3 +34,35 @@ updates:
     labels:
       - dependencies
       - github-actions
+
+  # Container base images (Containerfile). Dependabot moves the pinned digests when the
+  # python and uv images are rebuilt upstream, and proposes new Python versions; the
+  # weekly container workflow patches Debian packages in between.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/London
+    groups:
+      base-images:
+        patterns: ["*"]
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+
+  # The Azure CLI in the "az" image, locked in its own project.
+  - package-ecosystem: uv
+    directory: /container/azure-cli
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/London
+    groups:
+      azure-cli:
+        patterns: ["*"]
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies

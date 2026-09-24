@@ -1,4 +1,4 @@
-"""Device commands across Entra, Defender and Intune: check once, watch until done, show one."""
+"""Device commands across Entra, Defender and Intune: check, watch, show, and AV versions."""
 
 from datetime import timedelta
 from typing import Annotated, Any
@@ -13,6 +13,7 @@ from libre_devops_helpers.cli.options import (
     NamesArgument,
     OutputOption,
     ProfileOption,
+    SheetOption,
     duration,
     get_runtime,
     names,
@@ -23,16 +24,20 @@ from libre_devops_helpers.core.poll import PollLimits
 from libre_devops_helpers.core.util import format_duration
 from libre_devops_helpers.microsoft.config import Profile
 from libre_devops_helpers.microsoft.devices import (
+    AvStatus,
     CheckRun,
     DeviceChecker,
     DeviceReport,
     Expectations,
+    av_query,
+    av_statuses,
     inspect_device,
+    version_key,
     watch,
 )
 
 devices_app = typer.Typer(
-    help="Devices across Entra, Defender and Intune: check, watch and show.",
+    help="Devices across Entra, Defender and Intune: check, watch, show, and AV versions.",
     no_args_is_help=True,
 )
 
@@ -68,6 +73,7 @@ WorkersOption = Annotated[
 
 def register(app: typer.Typer) -> None:
     app.add_typer(devices_app, name="devices")
+    app.add_typer(devices_app, name="device", hidden=True)  # the singular works as well
 
 
 def _expectations(
@@ -159,6 +165,7 @@ def check(
     devices: NamesArgument = None,
     from_file: FromFileOption = None,
     column: ColumnOption = None,
+    sheet: SheetOption = None,
     entra: EntraOption = True,
     defender: DefenderOption = True,
     active: ActiveOption = False,
@@ -175,7 +182,7 @@ def check(
     By default each device must be in Entra and onboarded to Defender. Exits 3 when any
     device misses any expectation.
     """
-    wanted = names(devices, from_file, column)
+    wanted = names(devices, from_file, column, sheet)
     expectations = _expectations(entra, defender, active, tag, group, intune, compliant)
     runtime = get_runtime(ctx).microsoft
     selected = runtime.profile(profile)
@@ -192,6 +199,7 @@ def watch_devices(
     devices: NamesArgument = None,
     from_file: FromFileOption = None,
     column: ColumnOption = None,
+    sheet: SheetOption = None,
     interval: Annotated[
         str, typer.Option("--interval", help="Time between passes, e.g. 90s, 5m, 1h.")
     ] = "5m",
@@ -223,7 +231,7 @@ def watch_devices(
     Progress goes to stderr after each pass; the final state goes to stdout. Exits 0
     when complete, 3 when a limit stopped it first, and 130 on Ctrl-C.
     """
-    wanted = names(devices, from_file, column)
+    wanted = names(devices, from_file, column, sheet)
     expectations = _expectations(entra, defender, active, tag, group, intune, compliant)
     every = duration(interval) or timedelta(minutes=5)
     limit = duration(timeout)
@@ -410,3 +418,113 @@ def show(
     )
     if warned:
         raise typer.Exit(ATTENTION)
+
+
+@devices_app.command("av-signature")
+def av_signature(
+    ctx: typer.Context,
+    devices: NamesArgument = None,
+    from_file: FromFileOption = None,
+    column: ColumnOption = None,
+    sheet: SheetOption = None,
+    at_least: Annotated[
+        str | None,
+        typer.Option(
+            "--at-least", metavar="VERSION", help="Flag signatures older than this, e.g. 1.419.0.0."
+        ),
+    ] = None,
+    endpoint: Annotated[
+        bool,
+        typer.Option(
+            "--endpoint",
+            help="Through the Defender for Endpoint API, as 'xdr hunt --endpoint' does.",
+        ),
+    ] = False,
+    show_query: Annotated[
+        bool, typer.Option("--show-query", help="Print the KQL instead of running it.")
+    ] = False,
+    profile: ProfileOption = None,
+    output: OutputOption = Output.TABLE,
+) -> None:
+    """The Defender Antivirus signature, engine and platform versions of devices.
+
+    One built-in Advanced Hunting query for every device named, through Graph like
+    'xdr hunt' (or --endpoint). UP TO DATE is Defender's own definitions check. Exits 3
+    when a device is not found, is out of date, or is older than --at-least.
+    """
+    wanted = names(devices, from_file, column, sheet)
+    if at_least:
+        version_key(at_least)  # a bad version fails before the query runs
+    query = av_query(wanted)
+    if show_query:
+        render.echo(query)
+        return
+    runtime = get_runtime(ctx).microsoft
+    selected = runtime.profile(profile)
+    result = runtime.xdr(selected).hunt(query) if endpoint else runtime.graph(selected).hunt(query)
+    statuses = av_statuses(wanted, result)
+    render.emit(
+        output,
+        [
+            "DEVICE",
+            "MACHINE",
+            "OS",
+            "SIGNATURE",
+            "ENGINE",
+            "PLATFORM",
+            "MODE",
+            "UP TO DATE",
+            "REPORTED",
+        ],
+        [_av_row(status, at_least) for status in statuses],
+        [_av_record(status, at_least) for status in statuses],
+    )
+    missing = sum(1 for status in statuses if not status.found)
+    stale = sum(1 for status in statuses if status.found and status.up_to_date is False)
+    behind = sum(
+        1 for status in statuses if at_least and status.found and status.older_than(at_least)
+    )
+    parts = [f"{len(statuses) - missing} found"]
+    parts += [f"{missing} not found"] if missing else []
+    parts += [f"{stale} out of date"] if stale else []
+    parts += [f"{behind} older than {at_least}"] if behind else []
+    render.note(", ".join(parts) + f" (profile {selected.name})")
+    if missing or stale or behind:
+        raise typer.Exit(ATTENTION)
+
+
+def _av_row(status: AvStatus, at_least: str | None) -> list[render.Cell]:
+    if not status.found:
+        return [status.query, ("not found", "red"), "", "", "", "", "", "", ""]
+    signature: render.Cell = status.signature
+    if at_least and status.older_than(at_least):
+        signature = (status.signature or "unknown", "yellow")
+    fresh = {True: ("yes", "green"), False: ("no", "yellow")}.get(status.up_to_date, "-")
+    return [
+        status.query,
+        status.device_name,
+        status.os_platform,
+        signature,
+        status.engine,
+        status.platform,
+        status.mode,
+        fresh,
+        render.when(status.reported),
+    ]
+
+
+def _av_record(status: AvStatus, at_least: str | None) -> dict[str, Any]:
+    return {
+        "query": status.query,
+        "found": status.found,
+        "device_id": status.device_id or None,
+        "device_name": status.device_name or None,
+        "os_platform": status.os_platform or None,
+        "signature_version": status.signature or None,
+        "engine_version": status.engine or None,
+        "platform_version": status.platform or None,
+        "mode": status.mode or None,
+        "up_to_date": status.up_to_date,
+        "older_than_minimum": status.older_than(at_least) if at_least and status.found else None,
+        "reported": status.reported.isoformat() if status.reported else None,
+    }

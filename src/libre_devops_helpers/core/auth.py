@@ -67,7 +67,36 @@ class CachingTokenProvider:
                 self._cache[key] = cached
             return cached
 
+    def invalidate(self, resource: str, tenant_id: str) -> None:
+        """Forget the cached token, so the next request fetches a new one."""
+        with self._lock:
+            self._cache.pop((resource, tenant_id.lower()), None)
 
-def token_source(provider: TokenProvider, resource: str, tenant_id: str) -> Callable[[], str]:
+
+class BearerToken:
+    """A current bearer token each time it is called, as ApiClient expects.
+
+    ``refresh`` drops the provider's cached token (when it caches), so the next call
+    fetches a new one. ApiClient calls it once when an API answers 401.
+    """
+
+    def __init__(self, provider: TokenProvider, resource: str, tenant_id: str) -> None:
+        self._provider = provider
+        self._resource = resource
+        self._tenant_id = tenant_id
+
+    def __repr__(self) -> str:
+        return f"BearerToken(resource={self._resource!r}, tenant_id={self._tenant_id!r})"
+
+    def __call__(self) -> str:
+        return self._provider.get_token(self._resource, self._tenant_id).token
+
+    def refresh(self) -> None:
+        invalidate = getattr(self._provider, "invalidate", None)
+        if callable(invalidate):
+            invalidate(self._resource, self._tenant_id)
+
+
+def token_source(provider: TokenProvider, resource: str, tenant_id: str) -> BearerToken:
     """A zero-argument callable returning a current bearer token, as ApiClient expects."""
-    return lambda: provider.get_token(resource, tenant_id).token
+    return BearerToken(provider, resource, tenant_id)

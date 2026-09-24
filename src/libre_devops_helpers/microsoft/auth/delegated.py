@@ -10,8 +10,14 @@ registration you own can be granted others, such as the PIM ones. Two flows:
   anywhere a browser cannot be reached.
 
 The first token needs a sign-in; the refresh token it comes with gets tokens for other
-APIs (ARM as well as Graph) without asking again. Every token, and the refresh token,
-lives in memory for the one command only: nothing is written to disk or logged.
+APIs (ARM as well as Graph) without asking again. A ``store`` (``core.token_store``)
+keeps that refresh token for the next command: a profile's ``token_cache`` picks it, a
+private file unless it says otherwise. Built directly, without a store, a credential
+keeps it in memory for its own lifetime only. Access tokens are never kept, and nothing
+is ever logged.
+
+On a machine with no browser to open, the browser flow signs in with a device code
+instead, as the Azure CLI does.
 """
 
 from __future__ import annotations
@@ -32,9 +38,12 @@ from urllib.parse import parse_qs, quote, urlencode, urlsplit
 import requests
 
 from libre_devops_helpers.core.auth import AccessToken, utc_now
-from libre_devops_helpers.core.errors import ApiError, AuthError
+from libre_devops_helpers.core.browser import can_launch_browser
+from libre_devops_helpers.core.errors import ApiError, AuthError, LdoError
 from libre_devops_helpers.core.http import ApiClient
+from libre_devops_helpers.core.token_store import MemoryStore, TokenStore
 from libre_devops_helpers.microsoft.auth.entra import parse_token_response, scope_for
+from libre_devops_helpers.microsoft.auth.lapse import lapse_reason
 from libre_devops_helpers.microsoft.clouds import PUBLIC
 
 log = logging.getLogger(__name__)
@@ -61,6 +70,8 @@ class _DelegatedCredential:
         clock: Callable[[], datetime],
         sleep: Callable[[float], None],
         notify: Callable[[str], None] | None,
+        store: TokenStore | None = None,
+        monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         self.client_id = client_id
         self.login_url = login_url.rstrip("/")
@@ -70,7 +81,8 @@ class _DelegatedCredential:
         self._clock = clock
         self._sleep = sleep
         self._notify = notify or _notify_by_log
-        self._refresh: dict[str, str] = {}
+        self._store = store or MemoryStore()
+        self._monotonic = monotonic
         self._lock = threading.Lock()
 
     def __repr__(self) -> str:
@@ -78,7 +90,7 @@ class _DelegatedCredential:
 
     def get_token(self, resource: str, tenant_id: str) -> AccessToken:
         with self._lock:
-            refresh = self._refresh.get(tenant_id.lower())
+            refresh = self._recall(tenant_id)
             if refresh:
                 try:
                     return self._redeem(
@@ -86,13 +98,77 @@ class _DelegatedCredential:
                         resource,
                         {"grant_type": "refresh_token", "refresh_token": refresh},
                     )
-                except AuthError:
+                except AuthError as exc:
                     # Revoked or expired: sign in again rather than fail the command.
-                    self._refresh.pop(tenant_id.lower(), None)
+                    self._forget(tenant_id)
+                    reason = lapse_reason(str(exc)) or "the refresh token was refused"
+                    self._notify(f"Signing in again: {reason}.")
             return self._sign_in(resource, tenant_id)
+
+    def sign_out(self, tenant_id: str) -> bool:
+        """Forget the kept sign-in for ``tenant_id``. True when there was one."""
+        with self._lock:
+            return self._store.delete(self._key(tenant_id))
+
+    def _key(self, tenant_id: str) -> str:
+        # One sign-in per cloud, app and tenant.
+        return f"{urlsplit(self.login_url).netloc}|{self.client_id}|{tenant_id.lower()}"
+
+    def _recall(self, tenant_id: str) -> str | None:
+        try:
+            return self._store.load(self._key(tenant_id))
+        except LdoError as exc:
+            self._notify(f"The kept sign-in cannot be used ({exc}); signing in afresh.")
+            return None
+
+    def _remember(self, tenant_id: str, refresh: str) -> None:
+        try:
+            self._store.save(self._key(tenant_id), refresh)
+        except LdoError as exc:
+            # The token works for this command all the same.
+            self._notify(f"The sign-in could not be kept for the next command: {exc}")
+
+    def _forget(self, tenant_id: str) -> None:
+        try:
+            self._store.delete(self._key(tenant_id))
+        except LdoError as exc:
+            log.warning("could not forget a refused refresh token: %s", exc)
 
     def _sign_in(self, resource: str, tenant_id: str) -> AccessToken:
         raise NotImplementedError
+
+    def _sign_in_with_device_code(self, resource: str, tenant_id: str) -> AccessToken:
+        """The device code flow: a code to enter at the device login page, then a poll."""
+        try:
+            flow = self._post(tenant_id, "devicecode", {"scope": self._scope(resource)})
+        except ApiError as exc:
+            raise AuthError(str(exc), hint=_hint(exc)) from None
+        device_code = str(flow.get("device_code") or "")
+        if not device_code:
+            raise AuthError("the device code response has no device_code")
+        self._notify(
+            str(
+                flow.get("message")
+                or f"Enter {flow.get('user_code')} at {flow.get('verification_uri')}"
+            )
+        )
+        interval = float(flow.get("interval") or 5)
+        deadline = self._monotonic() + float(flow.get("expires_in") or 900)
+        form = {"grant_type": DEVICE_CODE_GRANT, "device_code": device_code}
+        while self._monotonic() < deadline:
+            self._sleep(interval)
+            now = self._clock()
+            try:
+                data = self._post(tenant_id, "token", {**form, "scope": self._scope(resource)})
+            except ApiError as exc:
+                if exc.code == "authorization_pending":
+                    continue
+                if exc.code == "slow_down":
+                    interval += 5
+                    continue
+                raise AuthError(str(exc), hint=_hint(exc)) from None
+            return self._keep(data, resource, tenant_id, now)
+        raise AuthError("the device code expired before sign-in completed; start again")
 
     def _scope(self, resource: str) -> str:
         return f"{scope_for(resource)} offline_access"
@@ -115,7 +191,7 @@ class _DelegatedCredential:
     ) -> AccessToken:
         refresh = data.get("refresh_token")
         if isinstance(refresh, str) and refresh:
-            self._refresh[tenant_id.lower()] = refresh
+            self._remember(tenant_id, refresh)
         return parse_token_response(data, resource, tenant_id, now=now, name="Entra ID sign-in")
 
 
@@ -184,9 +260,12 @@ class InteractiveCredential(_DelegatedCredential):
         clock: Callable[[], datetime] = utc_now,
         sleep: Callable[[float], None] = time.sleep,
         notify: Callable[[str], None] | None = None,
+        store: TokenStore | None = None,
         open_browser: Callable[[str], object] = webbrowser.open,
         receiver: Callable[[], CodeReceiver] = LoopbackReceiver,
         timeout: float = SIGN_IN_TIMEOUT,
+        has_browser: Callable[[], bool] | None = None,
+        monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         super().__init__(
             client_id,
@@ -196,12 +275,19 @@ class InteractiveCredential(_DelegatedCredential):
             clock=clock,
             sleep=sleep,
             notify=notify,
+            store=store,
+            monotonic=monotonic,
         )
         self._open_browser = open_browser
         self._receiver = receiver
         self._timeout = timeout
+        self._has_browser = has_browser or can_launch_browser
 
     def _sign_in(self, resource: str, tenant_id: str) -> AccessToken:
+        if not self._has_browser():
+            # Headless: the browser's redirect could never reach this machine's listener.
+            self._notify("No web browser here, so signing in with a device code instead.")
+            return self._sign_in_with_device_code(resource, tenant_id)
         verifier = secrets.token_urlsafe(64)
         challenge = (
             base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest())
@@ -267,6 +353,7 @@ class DeviceCodeCredential(_DelegatedCredential):
         sleep: Callable[[float], None] = time.sleep,
         monotonic: Callable[[], float] = time.monotonic,
         notify: Callable[[str], None] | None = None,
+        store: TokenStore | None = None,
     ) -> None:
         super().__init__(
             client_id,
@@ -276,40 +363,12 @@ class DeviceCodeCredential(_DelegatedCredential):
             clock=clock,
             sleep=sleep,
             notify=notify,
+            store=store,
+            monotonic=monotonic,
         )
-        self._monotonic = monotonic
 
     def _sign_in(self, resource: str, tenant_id: str) -> AccessToken:
-        try:
-            flow = self._post(tenant_id, "devicecode", {"scope": self._scope(resource)})
-        except ApiError as exc:
-            raise AuthError(str(exc), hint=_hint(exc)) from None
-        device_code = str(flow.get("device_code") or "")
-        if not device_code:
-            raise AuthError("the device code response has no device_code")
-        self._notify(
-            str(
-                flow.get("message")
-                or f"Enter {flow.get('user_code')} at {flow.get('verification_uri')}"
-            )
-        )
-        interval = float(flow.get("interval") or 5)
-        deadline = self._monotonic() + float(flow.get("expires_in") or 900)
-        form = {"grant_type": DEVICE_CODE_GRANT, "device_code": device_code}
-        while self._monotonic() < deadline:
-            self._sleep(interval)
-            now = self._clock()
-            try:
-                data = self._post(tenant_id, "token", {**form, "scope": self._scope(resource)})
-            except ApiError as exc:
-                if exc.code == "authorization_pending":
-                    continue
-                if exc.code == "slow_down":
-                    interval += 5
-                    continue
-                raise AuthError(str(exc), hint=_hint(exc)) from None
-            return self._keep(data, resource, tenant_id, now)
-        raise AuthError("the device code expired before sign-in completed; start again")
+        return self._sign_in_with_device_code(resource, tenant_id)
 
 
 def _hint(exc: ApiError) -> str | None:

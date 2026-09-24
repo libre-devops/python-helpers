@@ -9,6 +9,8 @@ names no module can hold, such as the Python package name in every import; see
 
 DISPLAY_NAME = "Libre DevOps Helpers"
 COMMAND = "ldo"
+# The name to install, from PyPI or a git URL.
+DISTRIBUTION = "libre-devops-helpers"
 ENV_PREFIX = "LDO"
 CONFIG_DIR = "ldo"
 

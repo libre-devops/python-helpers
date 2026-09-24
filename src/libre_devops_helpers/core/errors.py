@@ -40,6 +40,26 @@ class AuthError(LdoError):
     """A credential could not produce an access token."""
 
 
+class ReauthRequired(AuthError):
+    """A sign-in has lapsed, and only a person signing in again can renew it.
+
+    Retrying does not help: the refresh token behind the session has expired or been
+    revoked, or a policy wants a fresh sign-in. ``reason`` says which, in plain words.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        hint: str | None = None,
+        tenant_id: str | None = None,
+        reason: str | None = None,
+    ) -> None:
+        super().__init__(message, hint=hint)
+        self.tenant_id = tenant_id
+        self.reason = reason
+
+
 class TokenError(LdoError):
     """A token could not be decoded."""
 

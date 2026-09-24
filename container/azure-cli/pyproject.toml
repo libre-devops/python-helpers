@@ -1,0 +1,21 @@
+# The Azure CLI for the default container image, locked with hashes like the main project.
+# It is installed into a virtual environment of its own (/opt/az), apart from the
+# tool's, so its many pinned dependencies never meet the tool's. Dependabot bumps it and
+# relocks.
+#
+# pip is left out, so 'az extension add' does not work in the image; the tool needs no
+# extensions. Build on the image and add pip if you do.
+#
+# The Azure CLI pins some dependencies exactly (msal, for one). When one of those
+# carries a fixed vulnerability before Microsoft moves the pin, it can be forced under
+# override-dependencies, at the cost of running a combination Microsoft has not tested:
+# sign in with the image before publishing it.
+[project]
+name = "container-azure-cli"
+version = "0"
+requires-python = ">=3.14"
+dependencies = ["azure-cli==2.90.0"]
+
+[tool.uv]
+package = false
+override-dependencies = []

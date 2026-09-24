@@ -43,9 +43,16 @@ def duration(value: str | None) -> timedelta | None:
         raise typer.BadParameter(str(exc)) from None
 
 
-def names(values: list[str] | None, from_file: Path | None, column: str | None) -> list[str]:
+def names(
+    values: list[str] | None,
+    from_file: Path | None,
+    column: str | None,
+    sheet: str | None = None,
+) -> list[str]:
     """Names from arguments, ``-`` for stdin, and ``--from-file``; at least one is needed."""
-    found = read_names(values or [], stdin=sys.stdin, from_file=from_file, column=column)
+    found = read_names(
+        values or [], stdin=sys.stdin, from_file=from_file, column=column, sheet=sheet
+    )
     if not found:
         raise InputError("no names given", hint="pass names, '-' for stdin, or --from-file")
     return found
@@ -98,7 +105,10 @@ FromFileOption = Annotated[
     typer.Option(
         "--from-file",
         "-f",
-        help="Read names from a file: one per line, or a CSV column (see --column).",
+        help=(
+            "Read names from a file: one per line, or a column of a CSV or Excel workbook "
+            "(.xlsx, .xlsm, .xltx, .xltm; see --column and --sheet)."
+        ),
         dir_okay=False,
         exists=True,
         show_default=False,
@@ -106,7 +116,23 @@ FromFileOption = Annotated[
 ]
 
 ColumnOption = Annotated[
-    str | None, typer.Option("--column", help="CSV column holding the names (matched by header).")
+    str | None,
+    typer.Option(
+        "--column",
+        help="Column holding the names, matched by header. Title rows above it are skipped.",
+    ),
+]
+
+SheetOption = Annotated[
+    str | None,
+    typer.Option(
+        "--sheet",
+        help=(
+            "Workbook sheet (tab) to read. Default: the one visible sheet with --column, "
+            "or the first visible sheet."
+        ),
+        show_default=False,
+    ),
 ]
 
 QueryFileOption = Annotated[

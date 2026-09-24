@@ -1,0 +1,12 @@
+# The build context for the Containerfile: podman and docker both read this file. Only
+# what the Containerfile copies is let in, so secrets and local environments stay out.
+*
+!pyproject.toml
+!uv.lock
+!README.md
+!LICENSE
+!src/
+!container/azure-cli/pyproject.toml
+!container/azure-cli/uv.lock
+**/__pycache__
+**/*.pyc

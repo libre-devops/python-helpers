@@ -1,7 +1,7 @@
 [project]
 name = "libre-devops-helpers"
-version = "0.1.0"
-description = "Libre DevOps Microsoft Helper: importable helpers and a fast, read-only CLI for Azure, Entra ID, Defender, Intune, Key Vault and Log Analytics."
+version = "0.2.0"
+description = "Libre DevOps Helpers: importable helpers and a fast, read-only CLI for Azure, Entra ID, Defender, Intune, PIM, Key Vault and Log Analytics, also shipped as a container image."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -40,6 +40,10 @@ dependencies = [
     "typer>=0.12",
 ]
 
+[project.optional-dependencies]
+# token_cache = "keychain" on macOS and Linux (Windows uses DPAPI, which needs nothing).
+keychain = ["keyring>=25"]
+
 [project.urls]
 Homepage = "https://github.com/libre-devops/python-helpers"
 Issues = "https://github.com/libre-devops/python-helpers/issues"
@@ -51,6 +55,7 @@ ldo = "libre_devops_helpers.cli:main"
 [dependency-groups]
 dev = [
     "pytest>=8",
+    "pytest-cov>=6",
     "ruff>=0.6",
     "rust-just>=1.30",
 ]
@@ -72,4 +77,22 @@ select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF", "PT"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra"
+# The tests mirror src/, so several share a file name (test_client.py); importlib mode
+# keeps them apart. The shared fakes are imported as the "fakes" package.
+addopts = ["-ra", "--import-mode=importlib"]
+pythonpath = ["tests"]
+
+[tool.coverage.run]
+source = ["libre_devops_helpers"]
+branch = true
+
+[tool.coverage.report]
+# CI fails below this. Raise it as coverage grows; never lower it to get a change in.
+fail_under = 93
+show_missing = true
+skip_covered = true
+exclude_also = [
+    "if TYPE_CHECKING:",
+    'if __name__ == "__main__":',
+    "@overload",
+]

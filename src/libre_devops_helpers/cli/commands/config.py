@@ -11,9 +11,10 @@ from libre_devops_helpers.core import brand
 from libre_devops_helpers.core.config import CONFIG_HEADER, default_config_path
 from libre_devops_helpers.core.errors import ConfigError
 from libre_devops_helpers.microsoft.config import CONFIG_TEMPLATE as MICROSOFT_TEMPLATE
+from libre_devops_helpers.servicenow.config import CONFIG_TEMPLATE as SERVICENOW_TEMPLATE
 
 # The file 'config init' writes: shared settings, then each vendor's section.
-TEMPLATE = "\n".join([CONFIG_HEADER, MICROSOFT_TEMPLATE])
+TEMPLATE = "\n".join([CONFIG_HEADER, MICROSOFT_TEMPLATE, SERVICENOW_TEMPLATE])
 
 config_app = typer.Typer(help="Create or locate the config file.", no_args_is_help=True)
 

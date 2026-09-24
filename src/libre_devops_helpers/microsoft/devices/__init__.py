@@ -1,4 +1,4 @@
-"""Devices across Entra, Defender and Intune: fast checks, watches and a combined view.
+"""Devices across Entra, Defender and Intune: checks, watches, a combined view, AV versions.
 
 The one composite module: it depends on ``core`` and on the ``entra``, ``xdr`` and
 ``intune`` feature modules, and nothing else. Public API::
@@ -11,6 +11,12 @@ The one composite module: it depends on ``core`` and on the ``entra``, ``xdr`` a
     outcome = watch(checker, names, Expectations(), PollLimits(interval=300, timeout=7200))
 """
 
+from libre_devops_helpers.microsoft.devices.antivirus import (
+    AvStatus,
+    av_query,
+    av_statuses,
+    version_key,
+)
 from libre_devops_helpers.microsoft.devices.check import DeviceChecker, watch
 from libre_devops_helpers.microsoft.devices.inspect import inspect_device
 from libre_devops_helpers.microsoft.devices.models import (
@@ -23,6 +29,7 @@ from libre_devops_helpers.microsoft.devices.models import (
 )
 
 __all__ = [
+    "AvStatus",
     "CheckRun",
     "DeviceChecker",
     "DeviceReport",
@@ -30,6 +37,9 @@ __all__ = [
     "Expectations",
     "Finding",
     "Outcome",
+    "av_query",
+    "av_statuses",
     "inspect_device",
+    "version_key",
     "watch",
 ]

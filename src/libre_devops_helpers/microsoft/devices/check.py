@@ -18,7 +18,7 @@ from datetime import datetime
 from typing import TypeVar
 
 from libre_devops_helpers.core.auth import utc_now
-from libre_devops_helpers.core.errors import ApiError, LdoError
+from libre_devops_helpers.core.errors import ApiError, LdoError, ReauthRequired
 from libre_devops_helpers.core.poll import PollLimits, PollOutcome, poll
 from libre_devops_helpers.microsoft.devices.models import (
     CheckRun,
@@ -61,14 +61,42 @@ class DeviceChecker:
     def check(self, names: Sequence[str], expectations: Expectations) -> CheckRun:
         """One pass over ``names``, in order."""
         self._require_clients(expectations)
+        self._prepare(expectations)
         members = self._group_members(expectations.groups)
         if not names:
             return CheckRun((), self._clock(), 0)
-        with ThreadPoolExecutor(max_workers=min(self._workers, len(names))) as pool:
-            reports = list(
-                pool.map(lambda name: self._check_one(name, expectations, members), names)
-            )
+        try:
+            reports = self._check_all(names, expectations, members)
+        except ReauthRequired:
+            # A sign-in lapsed mid-pass, in a worker, which must not stop to ask anyone.
+            # Ask here on the calling thread (this raises again if nobody can sign in),
+            # then run the pass again.
+            self._prepare(expectations)
+            reports = self._check_all(names, expectations, members)
         return CheckRun(tuple(reports), self._clock(), len(names))
+
+    def _prepare(self, expectations: Expectations) -> None:
+        """Get each service's token on this thread before the workers need it.
+
+        A token is normally cached already, so this is cheap; when a sign-in has lapsed,
+        it is where a credential that can ask someone to sign in again gets to ask.
+        """
+        for needed, client in (
+            (expectations.needs_entra or expectations.groups, self._entra),
+            (expectations.needs_defender, self._xdr),
+            (expectations.needs_intune, self._intune),
+        ):
+            if needed and client is not None:
+                client.api.ensure_token()
+
+    def _check_all(
+        self,
+        names: Sequence[str],
+        expectations: Expectations,
+        members: Mapping[str, frozenset[str]],
+    ) -> list[DeviceReport]:
+        with ThreadPoolExecutor(max_workers=min(self._workers, len(names))) as pool:
+            return list(pool.map(lambda name: self._check_one(name, expectations, members), names))
 
     def _require_clients(self, expectations: Expectations) -> None:
         missing = [

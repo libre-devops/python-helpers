@@ -1,4 +1,4 @@
-"""Token commands: get a token for a profile, or inspect one you already have."""
+"""Token commands: get a token for a profile, inspect one you have, or forget a sign-in."""
 
 import json
 import sys
@@ -13,7 +13,7 @@ from libre_devops_helpers.cli.options import OutputOption, ProfileOption, get_ru
 from libre_devops_helpers.cli.render import Output
 from libre_devops_helpers.core import brand
 from libre_devops_helpers.core.errors import LdoError
-from libre_devops_helpers.microsoft import entra, intune, pim, xdr
+from libre_devops_helpers.microsoft import entra, graph, incidents, intune, pim, xdr
 from libre_devops_helpers.microsoft.resources import resolve_resource
 from libre_devops_helpers.microsoft.tokens import (
     Check,
@@ -29,6 +29,8 @@ REQUIREMENTS = (
     *xdr.REQUIREMENTS,
     *intune.REQUIREMENTS,
     *pim.REQUIREMENTS,
+    *incidents.REQUIREMENTS,
+    *graph.REQUIREMENTS,
 )
 
 RequireOption = Annotated[
@@ -44,6 +46,29 @@ AllClaimsOption = Annotated[
 def register(app: typer.Typer) -> None:
     app.command("token")(token)
     app.command("inspect-token")(inspect_token)
+    app.command("sign-out")(sign_out)
+
+
+def sign_out(ctx: typer.Context, profile: ProfileOption = None) -> None:
+    """Forget the sign-in an interactive or device-code profile keeps (see token_cache).
+
+    The refresh token is removed from the keychain or file; the next command signs in
+    afresh. Signing out of Entra ID itself, everywhere, is done in your account settings.
+    """
+    runtime = get_runtime(ctx).microsoft
+    selected = runtime.profile(profile)
+    if selected.auth == "azure-cli":
+        raise LdoError(
+            f"profile {selected.name!r} uses the Azure CLI's sign-in, which it keeps itself",
+            hint="run 'az logout', or 'az account clear' to forget every account",
+        )
+    if selected.token_cache == "memory":
+        render.note(f'profile {selected.name!r} keeps no sign-in (token_cache = "memory")')
+        return
+    if runtime.sign_out(selected):
+        render.note(f"Forgot the sign-in kept for {selected.name} ({selected.token_cache}).")
+    else:
+        render.note(f"No sign-in was kept for {selected.name}.")
 
 
 def token(

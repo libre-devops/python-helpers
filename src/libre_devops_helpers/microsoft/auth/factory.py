@@ -14,7 +14,8 @@ import requests
 
 from libre_devops_helpers.core.auth import TokenProvider
 from libre_devops_helpers.core.errors import AuthError
-from libre_devops_helpers.microsoft.auth.azure_cli import AzureCliCredential
+from libre_devops_helpers.core.token_store import TokenStore, open_store
+from libre_devops_helpers.microsoft.auth.azure_cli import AzureCliCredential, Reauthenticate
 from libre_devops_helpers.microsoft.auth.delegated import (
     DeviceCodeCredential,
     InteractiveCredential,
@@ -28,7 +29,7 @@ from libre_devops_helpers.microsoft.auth.entra import (
 from libre_devops_helpers.microsoft.auth.managed_identity import (
     ManagedIdentityCredential,
 )
-from libre_devops_helpers.microsoft.config import Profile
+from libre_devops_helpers.microsoft.config import DELEGATED_AUTH, Profile
 from libre_devops_helpers.microsoft.process import AzureCliRunner
 
 SECRET_VARIABLE = "AZURE_CLIENT_SECRET"
@@ -45,11 +46,19 @@ def credential_for(
     verify: bool | str = True,
     environ: Mapping[str, str] = os.environ,
     notify: Callable[[str], None] | None = None,
+    reauthenticate: Reauthenticate | None = None,
+    token_store: TokenStore | None = None,
 ) -> TokenProvider:
-    """The token provider for ``profile``. Raises AuthError when its inputs are missing."""
+    """The token provider for ``profile``. Raises AuthError when its inputs are missing.
+
+    ``reauthenticate`` is offered to the Azure CLI credential, to sign the CLI in again
+    when its session has lapsed; see AzureCliCredential. ``token_store`` keeps an
+    interactive or device-code sign-in between commands; without it, the store the
+    profile's ``token_cache`` names is opened.
+    """
     login_url = profile.cloud.login_url
     if profile.auth == "azure-cli":
-        return AzureCliCredential(runner)
+        return AzureCliCredential(runner, reauthenticate=reauthenticate)
     if profile.auth == "managed-identity":
         return ManagedIdentityCredential(profile.client_id, environ=environ, session=session)
 
@@ -57,13 +66,15 @@ def credential_for(
     if client_id is None:
         raise AuthError(f"profile {profile.name!r} uses auth = {profile.auth!r} without client_id")
 
-    if profile.auth == "interactive":
-        return InteractiveCredential(
-            client_id, login_url=login_url, session=session, verify=verify, notify=notify
-        )
-    if profile.auth == "device-code":
-        return DeviceCodeCredential(
-            client_id, login_url=login_url, session=session, verify=verify, notify=notify
+    if profile.auth in DELEGATED_AUTH:
+        flow = InteractiveCredential if profile.auth == "interactive" else DeviceCodeCredential
+        return flow(
+            client_id,
+            login_url=login_url,
+            session=session,
+            verify=verify,
+            notify=notify,
+            store=token_store or open_store(profile.token_cache, environ=environ),
         )
 
     if profile.auth == "client-secret":

@@ -11,7 +11,7 @@ Public API::
     tokens = CachingTokenProvider(credential_for(profile))
 """
 
-from libre_devops_helpers.microsoft.auth.azure_cli import AzureCliCredential
+from libre_devops_helpers.microsoft.auth.azure_cli import AzureCliCredential, Reauthenticate
 from libre_devops_helpers.microsoft.auth.delegated import (
     DeviceCodeCredential,
     InteractiveCredential,
@@ -24,6 +24,7 @@ from libre_devops_helpers.microsoft.auth.entra import (
     github_actions_assertion,
 )
 from libre_devops_helpers.microsoft.auth.factory import credential_for
+from libre_devops_helpers.microsoft.auth.lapse import lapse_reason
 from libre_devops_helpers.microsoft.auth.managed_identity import ManagedIdentityCredential
 
 __all__ = [
@@ -33,8 +34,10 @@ __all__ = [
     "InteractiveCredential",
     "LoopbackReceiver",
     "ManagedIdentityCredential",
+    "Reauthenticate",
     "WorkloadIdentityCredential",
     "credential_for",
     "federated_token_file",
     "github_actions_assertion",
+    "lapse_reason",
 ]

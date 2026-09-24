@@ -19,11 +19,15 @@ from libre_devops_helpers.cli.commands import (
     config,
     devices,
     entra,
+    graph,
+    incidents,
     intune,
     keyvault,
+    logicapp,
     logs,
     pim,
     profiles,
+    snow,
     token,
     welcome,
     xdr,
@@ -108,17 +112,22 @@ for _module in (
     profiles,
     az,
     entra,
+    graph,
     xdr,
     intune,
     azure,
     keyvault,
     logs,
+    logicapp,
     pim,
     devices,
+    snow,
 ):
     _module.register(app)
 # Token commands are about Entra-issued tokens, so they live in the entra group.
 token.register(entra.entra_app)
+# Incidents are Defender XDR's (Sentinel's included), so they live in the xdr group.
+incidents.register(xdr.xdr_app)
 
 
 def main() -> None:

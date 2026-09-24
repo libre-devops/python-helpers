@@ -1,0 +1,292 @@
+name: Container
+
+# Builds both container images (the default, with the Azure CLI, for people signing in
+# as themselves; and "slim", the tool alone), then smoke tests and scans them on every
+# change. It publishes them to GitHub Container
+# Registry in two cases:
+#
+#   - a release: release.yml calls this workflow with the new tag;
+#   - the weekly patch run: it rebuilds the latest release's source on the same pinned
+#     base, taking the newest Debian security updates, and republishes only when a
+#     package actually changed.
+#
+# Floating tags (0.2, latest, slim) then move to the patched build, and each build also
+# keeps an immutable stamped tag. Newer Python packages, a newer Azure CLI and new base
+# image digests come through Dependabot and reach the images with the next release.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 5 * * 1" # Mondays 05:17 UTC
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Rebuild and republish the latest release now, whether or not anything changed
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      ref:
+        description: The release tag to build and publish
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: container-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  TRIVY_VERSION: 0.74.0
+  # From the release's checksums file. Bump both together.
+  TRIVY_SHA256: 2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a
+  # The public mirror first; ghcr.io rate limits anonymous database downloads.
+  TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db,ghcr.io/aquasecurity/trivy-db
+  PLATFORMS: linux/amd64,linux/arm64
+
+jobs:
+  image:
+    name: Image (${{ matrix.variant }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      # Publishing, and the build provenance and SBOM attestations that go with it.
+      packages: write
+      id-token: write
+      attestations: write
+      # The vulnerability scan's results, for the Security tab.
+      security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The default image. The Azure CLI pins its own dependencies, so their high
+          # findings are reported (see the Security tab) and a fixed critical one fails.
+          # See container/azure-cli/pyproject.toml for forcing a fix.
+          - variant: az
+            gate: CRITICAL
+          # The tool alone is ours to keep clean: any fixed high or critical finding fails.
+          - variant: tool
+            gate: HIGH,CRITICAL
+
+    steps:
+      - name: Decide what to build
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.ref }}
+          FORCE: ${{ inputs.publish }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          publish=false; latest=false; force=false; ref="${GITHUB_SHA}"
+          if [ -n "${RELEASE_TAG}" ]; then
+            # Called by the release workflow.
+            ref="${RELEASE_TAG}"; publish=true; latest=true; force=true
+          elif [ "${EVENT}" = schedule ] || [ "${FORCE}" = true ]; then
+            ref="$(gh release view --repo "${GITHUB_REPOSITORY}" --json tagName --jq .tagName 2>/dev/null || true)"
+            if [ -z "${ref}" ]; then
+              echo "::notice::There is no release yet, so there is nothing to rebuild."
+              echo "skip=true" >> "${GITHUB_OUTPUT}"
+              exit 0
+            fi
+            publish=true; latest=true; force="${FORCE:-false}"
+          fi
+          {
+            echo "skip=false"
+            echo "ref=${ref}"
+            echo "publish=${publish}"
+            echo "latest=${latest}"
+            echo "force=${force}"
+            echo "image=ghcr.io/${GITHUB_REPOSITORY,,}"
+            echo "stamp=$(date -u +%Y%m%d).${GITHUB_RUN_NUMBER}"
+            echo "created=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Checkout
+        if: steps.plan.outputs.skip != 'true'
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.plan.outputs.ref }}
+
+      - name: Read the version
+        if: steps.plan.outputs.skip != 'true'
+        id: version
+        run: |
+          version="$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "revision=$(git rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
+
+      - name: Build
+        if: steps.plan.outputs.skip != 'true'
+        env:
+          VARIANT: ${{ matrix.variant }}
+          VERSION: ${{ steps.version.outputs.version }}
+          REVISION: ${{ steps.version.outputs.revision }}
+          CREATED: ${{ steps.plan.outputs.created }}
+        run: |
+          podman build --target "${VARIANT}" --tag "localhost/image:${VARIANT}" \
+            --label "org.opencontainers.image.version=${VERSION}" \
+            --label "org.opencontainers.image.revision=${REVISION}" \
+            --label "org.opencontainers.image.created=${CREATED}" \
+            .
+
+      - name: Smoke test
+        if: steps.plan.outputs.skip != 'true'
+        env:
+          VARIANT: ${{ matrix.variant }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          image="localhost/image:${VARIANT}"
+          podman run --rm "${image}" --version | grep -F " ${VERSION}"
+          podman run --rm "${image}" devices check --help > /dev/null
+          test "$(podman run --rm --entrypoint id "${image}" -u)" != 0
+          if [ "${VARIANT}" = az ]; then
+            podman run --rm --entrypoint az "${image}" version --output none
+            # Signed out, the tool must reach az and report it, not crash.
+            if output="$(podman run --rm "${image}" az whoami 2>&1)"; then
+              echo "::error::az whoami succeeded without a sign-in"; exit 1
+            fi
+            grep -F "not signed in" <<< "${output}"
+          fi
+
+      - name: Install Trivy
+        if: steps.plan.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          archive="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          curl -fsSL -o "${RUNNER_TEMP}/${archive}" \
+            "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/${archive}"
+          echo "${TRIVY_SHA256}  ${RUNNER_TEMP}/${archive}" | sha256sum -c -
+          tar -xzf "${RUNNER_TEMP}/${archive}" -C "${RUNNER_TEMP}" trivy
+
+      - name: Scan
+        if: steps.plan.outputs.skip != 'true'
+        env:
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          set -euo pipefail
+          podman save --quiet --output "${RUNNER_TEMP}/image.tar" "localhost/image:${VARIANT}"
+          scan=("${RUNNER_TEMP}/trivy" image --input "${RUNNER_TEMP}/image.tar"
+            --cache-dir "${RUNNER_TEMP}/trivy-cache" --scanners vuln --quiet)
+          "${scan[@]}" --format sarif --output "${RUNNER_TEMP}/trivy.sarif"
+          "${scan[@]}" --format cyclonedx --output "${RUNNER_TEMP}/sbom.cdx.json"
+          "${scan[@]}" --format table --severity HIGH,CRITICAL --ignore-unfixed
+
+      - name: Report the scan
+        if: steps.plan.outputs.skip != 'true' && !cancelled() && github.event_name != 'pull_request'
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: ${{ runner.temp }}/trivy.sarif
+          category: container-${{ matrix.variant }}
+
+      - name: Gate on fixed vulnerabilities
+        if: steps.plan.outputs.skip != 'true'
+        env:
+          GATE: ${{ matrix.gate }}
+        run: |
+          "${RUNNER_TEMP}/trivy" image --input "${RUNNER_TEMP}/image.tar" \
+            --cache-dir "${RUNNER_TEMP}/trivy-cache" --scanners vuln --quiet \
+            --severity "${GATE}" --ignore-unfixed --exit-code 1 --format table
+
+      # A weekly rebuild is only worth publishing when a package moved. The Python
+      # environments are locked, so the Debian packages are what can change.
+      - name: Compare with the published image
+        if: steps.plan.outputs.publish == 'true'
+        id: changed
+        env:
+          VARIANT: ${{ matrix.variant }}
+          IMAGE: ${{ steps.plan.outputs.image }}
+          VERSION: ${{ steps.version.outputs.version }}
+          FORCE: ${{ steps.plan.outputs.force }}
+        run: |
+          set -euo pipefail
+          if [ "${FORCE}" = true ]; then echo "changed=true" >> "${GITHUB_OUTPUT}"; exit 0; fi
+          tag="$(python3 scripts/image_tags.py --version "${VERSION}" --variant "${VARIANT}" | head -n 1)"
+          list() { podman run --rm --entrypoint dpkg-query "$1" --show --showformat='${Package}=${Version}\n' | sort; }
+          if ! podman pull --quiet "${IMAGE}:${tag}" > /dev/null 2>&1; then
+            echo "changed=true" >> "${GITHUB_OUTPUT}"; exit 0
+          fi
+          if diff <(list "${IMAGE}:${tag}") <(list "localhost/image:${VARIANT}"); then
+            echo "::notice::${IMAGE}:${tag} is already up to date; nothing to publish."
+            echo "changed=false" >> "${GITHUB_OUTPUT}"
+          else
+            echo "changed=true" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Set up emulation for other architectures
+        if: steps.changed.outputs.changed == 'true'
+        run: |
+          sudo apt-get update --quiet
+          sudo apt-get install --yes --quiet qemu-user-static
+
+      - name: Build for every platform
+        if: steps.changed.outputs.changed == 'true'
+        env:
+          VARIANT: ${{ matrix.variant }}
+          VERSION: ${{ steps.version.outputs.version }}
+          REVISION: ${{ steps.version.outputs.revision }}
+          CREATED: ${{ steps.plan.outputs.created }}
+        run: |
+          # The native platform comes from the layer cache: the image tested and scanned above.
+          podman build --target "${VARIANT}" --platform "${PLATFORMS}" \
+            --manifest "localhost/release:${VARIANT}" \
+            --label "org.opencontainers.image.version=${VERSION}" \
+            --label "org.opencontainers.image.revision=${REVISION}" \
+            --label "org.opencontainers.image.created=${CREATED}" \
+            .
+
+      - name: Publish
+        if: steps.changed.outputs.changed == 'true'
+        id: publish
+        env:
+          VARIANT: ${{ matrix.variant }}
+          IMAGE: ${{ steps.plan.outputs.image }}
+          VERSION: ${{ steps.version.outputs.version }}
+          STAMP: ${{ steps.plan.outputs.stamp }}
+          LATEST: ${{ steps.plan.outputs.latest }}
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          podman login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin <<< "${REGISTRY_TOKEN}"
+          # The attestation actions push with Docker's credentials, not podman's.
+          docker login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin <<< "${REGISTRY_TOKEN}"
+          flags=(--version "${VERSION}" --variant "${VARIANT}" --stamp "${STAMP}")
+          if [ "${LATEST}" = true ]; then flags+=(--latest); fi
+          mapfile -t tags < <(python3 scripts/image_tags.py "${flags[@]}")
+          for tag in "${tags[@]}"; do
+            podman manifest push --all --digestfile "${RUNNER_TEMP}/digest" \
+              "localhost/release:${VARIANT}" "docker://${IMAGE}:${tag}"
+            echo "Pushed ${IMAGE}:${tag}"
+          done
+          echo "digest=$(cat "${RUNNER_TEMP}/digest")" >> "${GITHUB_OUTPUT}"
+          {
+            echo "## ${IMAGE} (${VARIANT})"
+            echo
+            echo "Digest \`$(cat "${RUNNER_TEMP}/digest")\`, tags:"
+            printf -- "- \`%s\`\n" "${tags[@]}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Attest build provenance
+        if: steps.changed.outputs.changed == 'true'
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ${{ steps.plan.outputs.image }}
+          subject-digest: ${{ steps.publish.outputs.digest }}
+          push-to-registry: true
+
+      - name: Attest the SBOM
+        if: steps.changed.outputs.changed == 'true'
+        uses: actions/attest-sbom@v4
+        with:
+          subject-name: ${{ steps.plan.outputs.image }}
+          subject-digest: ${{ steps.publish.outputs.digest }}
+          sbom-path: ${{ runner.temp }}/sbom.cdx.json
+          push-to-registry: true

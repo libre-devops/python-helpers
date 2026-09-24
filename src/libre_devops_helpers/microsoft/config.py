@@ -26,6 +26,7 @@ from libre_devops_helpers.core.config import (
     text,
 )
 from libre_devops_helpers.core.errors import ConfigError
+from libre_devops_helpers.core.token_store import DEFAULT_TOKEN_CACHE, TOKEN_CACHES
 from libre_devops_helpers.microsoft.clouds import CLOUDS, PUBLIC, Cloud, get_cloud
 
 SECTION = "microsoft"
@@ -41,6 +42,8 @@ AUTH_METHODS = (
     "managed-identity",
 )
 _NEEDS_CLIENT_ID = frozenset({"interactive", "device-code", "client-secret", "workload-identity"})
+# The methods whose sign-in comes with a refresh token this tool keeps (token_cache).
+DELEGATED_AUTH = frozenset({"interactive", "device-code"})
 _SECTION_KEYS = frozenset({"default_profile", "profiles"})
 _PROFILE_KEYS = frozenset(
     {
@@ -52,6 +55,7 @@ _PROFILE_KEYS = frozenset(
         "auth",
         "client_id",
         "workspace_id",
+        "token_cache",
     }
 )
 
@@ -96,6 +100,14 @@ tenant_id = "{PLACEHOLDER_ID}"
 #                              AZURE_FEDERATED_TOKEN_FILE, or requested from GitHub Actions
 # auth = "managed-identity"    client_id is optional and picks a user-assigned identity
 # client_id = "<app or identity client id>"
+#
+# For interactive and device-code, token_cache says where the sign-in is kept between
+# commands, so you are not asked to sign in for each one:
+# token_cache = "file"         the default: a plaintext file only your account can read
+#                              (0600), which works headless
+# token_cache = "keychain"     the operating system's keychain (needs the keychain extra
+#                              on macOS and Linux; DPAPI encryption on Windows)
+# token_cache = "memory"       nowhere; each command signs in afresh
 """
 
 
@@ -113,6 +125,8 @@ class Profile:
     auth: str = "azure-cli"
     client_id: str | None = None
     workspace_id: str | None = None
+    # Where an interactive or device-code sign-in is kept between commands.
+    token_cache: str = DEFAULT_TOKEN_CACHE
 
     @property
     def kind(self) -> str:
@@ -207,6 +221,14 @@ def _parse_profile(name: str, value: object, path: str) -> Profile:
     client_id = guid(data, "client_id", where)
     if auth in _NEEDS_CLIENT_ID and client_id is None:
         raise ConfigError(f"{where}: auth = {auth!r} needs a client_id")
+    token_cache = text(data, "token_cache", where)
+    if token_cache is not None and token_cache not in TOKEN_CACHES:
+        raise ConfigError(f"{where}: token_cache must be one of {', '.join(TOKEN_CACHES)}")
+    if token_cache is not None and auth not in DELEGATED_AUTH:
+        raise ConfigError(
+            f'{where}: token_cache applies to auth = "interactive" or "device-code"',
+            hint="the Azure CLI keeps its own sign-in, and the other methods have none to keep",
+        )
 
     return Profile(
         name=name,
@@ -218,4 +240,5 @@ def _parse_profile(name: str, value: object, path: str) -> Profile:
         auth=auth,
         client_id=client_id,
         workspace_id=guid(data, "workspace_id", where),
+        token_cache=token_cache or DEFAULT_TOKEN_CACHE,
     )

@@ -9,8 +9,11 @@ from libre_devops_helpers.cli.options import OutputOption, get_runtime
 from libre_devops_helpers.cli.render import Output
 from libre_devops_helpers.cli.runtime import Runtime
 from libre_devops_helpers.core import brand
+from libre_devops_helpers.core.errors import LdoError
 from libre_devops_helpers.microsoft.azcli import find_account, match_profile
 from libre_devops_helpers.microsoft.process import AzCliError
+from libre_devops_helpers.servicenow import OAuthCredential
+from libre_devops_helpers.servicenow import Profile as ServiceNowProfile
 
 
 def register(app: typer.Typer) -> None:
@@ -22,6 +25,9 @@ def profiles(ctx: typer.Context, output: OutputOption = Output.TABLE) -> None:
     runtime = get_runtime(ctx)
     runtime.config_file()
     rows, records = _microsoft(runtime)
+    snow_rows, snow_records = _servicenow(runtime)
+    rows += snow_rows
+    records += snow_records
     render.emit(
         output,
         ["VENDOR", "", "PROFILE", "TARGET", "AUTH", "SIGNED IN", "DESCRIPTION"],
@@ -88,6 +94,54 @@ def _microsoft(runtime: Runtime) -> tuple[list[list[render.Cell]], list[dict[str
     if placeholders:
         render.warn(f"placeholder ids in {', '.join(placeholders)}; edit {config.path}")
     return rows, records
+
+
+def _servicenow(runtime: Runtime) -> tuple[list[list[render.Cell]], list[dict[str, Any]]]:
+    snow = runtime.servicenow
+    config = snow.config()
+    default = config.default_profile if config else None
+    rows: list[list[render.Cell]] = []
+    records: list[dict[str, Any]] = []
+    for profile in snow.profiles():
+        signed_in = _snow_signed_in(runtime, profile)
+        method = f"oauth ({profile.sign_in})" if profile.auth == "oauth" else profile.auth
+        records.append(
+            {
+                "vendor": "servicenow",
+                "name": profile.name,
+                "instance": profile.instance,
+                "auth": profile.auth,
+                "sign_in": profile.sign_in if profile.auth == "oauth" else None,
+                "description": profile.description,
+                "default": profile.name == default,
+                "signed_in": signed_in,
+            }
+        )
+        rows.append(
+            [
+                "servicenow",
+                " ",
+                profile.name + (" (default)" if profile.name == default else ""),
+                profile.host,
+                method,
+                "?" if signed_in is None else ("yes", "green") if signed_in else ("no", "yellow"),
+                profile.description,
+            ]
+        )
+    return rows, records
+
+
+def _snow_signed_in(runtime: Runtime, profile: ServiceNowProfile) -> bool | None:
+    """Whether a command could sign in now, without asking: a kept sign-in, or a password."""
+    if profile.auth == "basic":
+        return bool(runtime.environ.get(profile.password_env))
+    if profile.token_cache == "keychain":
+        return None  # reading the keychain can prompt; not worth it for a listing
+    try:
+        credential = runtime.servicenow.credential(profile)
+    except LdoError:
+        return False
+    return isinstance(credential, OAuthCredential) and credential.has_kept_sign_in()
 
 
 def _signed_in_cell(auth: str, signed_in: bool | None) -> render.Cell:

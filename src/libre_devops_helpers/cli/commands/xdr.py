@@ -14,6 +14,7 @@ from libre_devops_helpers.cli.options import (
     OutputOption,
     ProfileOption,
     QueryFileOption,
+    SheetOption,
     duration,
     get_runtime,
     names,
@@ -25,7 +26,10 @@ from libre_devops_helpers.core.util import format_duration
 from libre_devops_helpers.microsoft.xdr import Machine, MachineLookup, parse_severity
 
 xdr_app = typer.Typer(
-    help="Defender for Endpoint: machines, alerts, vulnerabilities and hunting.",
+    help=(
+        "Defender XDR: incidents (Sentinel's included), and Defender for Endpoint "
+        "machines, alerts, vulnerabilities and hunting."
+    ),
     no_args_is_help=True,
 )
 
@@ -42,6 +46,7 @@ def machines(
     devices: NamesArgument = None,
     from_file: FromFileOption = None,
     column: ColumnOption = None,
+    sheet: SheetOption = None,
     profile: ProfileOption = None,
     all_records: Annotated[
         bool, typer.Option("--all-records", help="Also list older duplicate Defender records.")
@@ -53,7 +58,7 @@ def machines(
     Each device is looked up by FQDN, then by short hostname. Exits 3 when any device
     has no Defender record.
     """
-    wanted = names(devices, from_file, column)
+    wanted = names(devices, from_file, column, sheet)
     runtime = get_runtime(ctx).microsoft
     selected = runtime.profile(profile)
     lookups = runtime.xdr(selected).find_machines(wanted)
@@ -307,11 +312,38 @@ def hunt(
         ),
     ] = None,
     file: QueryFileOption = None,
+    endpoint: Annotated[
+        bool,
+        typer.Option(
+            "--endpoint",
+            help=(
+                "Through the Defender for Endpoint API instead: device tables only, but the "
+                "Azure CLI's sign-in can use it."
+            ),
+        ),
+    ] = False,
+    timespan: Annotated[
+        str | None,
+        typer.Option("--timespan", help="How far back the data goes, e.g. 7d. Default: 30 days."),
+    ] = None,
     profile: ProfileOption = None,
     output: OutputOption = Output.TABLE,
 ) -> None:
-    """Run an Advanced Hunting (KQL) query against Defender."""
+    """Run an Advanced Hunting (KQL) query over Defender XDR.
+
+    Through Microsoft Graph, which covers every Defender XDR table: devices, email,
+    identity, cloud apps and alerts. It needs ThreatHunting.Read.All, which the Azure
+    CLI's token never has: use an interactive or device-code profile whose app has it,
+    or --endpoint for the device tables with the Azure CLI's sign-in.
+    """
     text = read_query(query, file)
+    if not endpoint:
+        from libre_devops_helpers.cli.commands.graph import run_graph_hunt
+
+        run_graph_hunt(ctx, text, timespan, profile, output)
+        return
+    if timespan:
+        raise typer.BadParameter("--timespan is not available with --endpoint; put it in the query")
     runtime = get_runtime(ctx).microsoft
     result = runtime.xdr(runtime.profile(profile)).hunt(text)
     render.query_result(result, output)

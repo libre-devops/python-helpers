@@ -17,11 +17,26 @@ jobs:
     name: Lint and Test
     uses: ./.github/workflows/ci.yml
 
+  # The images are built, scanned and pushed before the release is created, so a release
+  # never exists without its images.
+  container:
+    name: Container images
+    needs: [ci]
+    uses: ./.github/workflows/container.yml
+    with:
+      ref: ${{ github.ref_name }}
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+      security-events: write
+
   release:
     name: Publish the GitHub release
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [ci]
+    needs: [ci, container]
     permissions:
       # Creating a release and attaching its files is the only write this workflow makes.
       contents: write

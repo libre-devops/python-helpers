@@ -16,9 +16,12 @@ Brief description of the change.
 
 Describe how this was tested.
 
-- [ ] `just check` passes locally (ruff lint, format check and pytest)
+- [ ] `just check` passes locally (ruff lint, format check, and tests with coverage)
 - [ ] `just test-311` passes (the oldest supported Python)
 - [ ] New behaviour is covered by tests that use the fakes, not the network or a real `az`
+- [ ] Tests sit in the directory that mirrors the code under test
+- [ ] If the Containerfile or its inputs changed: `just image`, `just image-slim` and
+      `just image-scan` pass
 - [ ] Manually run against a real tenant (say which commands)
 - [ ] GitHub Actions pipeline passed
 
