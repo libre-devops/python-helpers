@@ -7,6 +7,7 @@ from fakes.tenant import runner
 from libre_devops_helpers.cli import app
 from libre_devops_helpers.cli.commands import pretty, selftest
 from libre_devops_helpers.cli.commands.selftest import Case
+from libre_devops_helpers.core import brand
 
 
 @pytest.fixture
@@ -67,6 +68,20 @@ def test_an_explained_error_is_refused_with_its_hint(cases, tmp_path):
     assert outcome["result"] == "refused"
     assert "config file not found" in outcome["detail"]
     assert outcome["hint"] == "create one with 'ldo config init'"
+
+
+def test_the_table_is_followed_by_each_failure_in_full(cases, tmp_path):
+    cases(Case(("json",), stdin="{}"), Case(("profiles",)))
+    missing = tmp_path / "none.toml"
+    result = runner.invoke(app, ["--config", str(missing), "self-test"])
+    assert result.exit_code == 0, result.output
+    table, details = result.stdout.split("\n\n", 1)
+    assert "COMMAND" in table
+    lines = [" ".join(line.split()) for line in details.splitlines()]
+    assert lines[0] == f"refused: {brand.COMMAND} profiles"
+    assert lines[1].startswith("Said config file not found")
+    assert lines[2] == f"Hint create one with {brand.command('config init')}"
+    assert "json" not in details  # only failures are shown in full
 
 
 def test_names_fill_the_commands_and_cases_without_them_are_skipped(cases, monkeypatch):

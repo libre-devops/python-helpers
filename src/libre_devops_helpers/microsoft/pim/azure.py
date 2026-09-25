@@ -18,6 +18,7 @@ from libre_devops_helpers.core.util import odata_string, require_guid
 from libre_devops_helpers.microsoft.api_clients import ArmServiceClient
 from libre_devops_helpers.microsoft.pim.models import PimAssignment, PimRequest, PimSettings
 from libre_devops_helpers.microsoft.pim.rules import settings_from_rules
+from libre_devops_helpers.microsoft.resource_ids import parse_resource_id
 
 PIM_API = "2020-10-01"
 ROLES_API = "2022-04-01"
@@ -167,18 +168,16 @@ def _guid(value: str) -> str:
 
 
 def _scope(value: str) -> str:
-    """An ARM scope, checked: '/subscriptions/<id>...' or a management group."""
-    scope = "/" + value.strip().strip("/")
-    if not (
-        scope.startswith("/subscriptions/") or scope.startswith("/providers/Microsoft.Management/")
-    ):
-        raise InputError(
-            f"not an Azure scope: {value!r}",
-            hint="use /subscriptions/<id>[/resourceGroups/<name>...] or a management group",
-        )
-    if ".." in scope or "://" in scope:
-        raise InputError(f"not an Azure scope: {value!r}")
-    return scope
+    """An ARM scope, checked part by part: a subscription, anything in one, or a management
+    group."""
+    hint = "use /subscriptions/ID[/resourceGroups/NAME...] or a management group's id"
+    try:
+        found = parse_resource_id(value)
+    except InputError as exc:
+        raise InputError(f"not an Azure scope: {value!r} ({exc})", hint=hint) from exc
+    if not (found.subscription or found.management_group):
+        raise InputError(f"not an Azure scope: {value!r}", hint=hint)
+    return found.id
 
 
 def _scopes(values: Iterable[str]) -> list[str]:

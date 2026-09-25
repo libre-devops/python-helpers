@@ -24,7 +24,7 @@ default_profile = "prod-tenant"
 [microsoft.profiles.prod-tenant]
 description = "Production tenant"
 tenant_id = "<tenant guid>"
-workspace_id = "<Log Analytics workspace id>"   # the default for 'logs query'
+workspace = "law-soc"            # the default for 'logs': its name, resource id or Workspace ID
 
 [microsoft.profiles.prod]
 tenant_id = "<tenant guid>"
@@ -47,7 +47,8 @@ A profile is a tenant, optionally pinned to a subscription, with one way of gett
 | `client_id` | The app registration, or user-assigned managed identity, to sign in with. |
 | `token_cache` | Where an `interactive` or `device-code` profile keeps its sign-in: `file` (the default), `keychain` or `memory`. |
 | `cloud` | `public` (the default), `usgov` (GCC High) or `china`. Point the Azure CLI at the same one with `az cloud set`. |
-| `workspace_id` | The Log Analytics workspace for `logs query` without `--workspace`. |
+| `workspace` | The Log Analytics workspace for `logs` without `--workspace`: its name, its resource id or its Workspace ID (see [Log Analytics](azure.md#log-analytics)). |
+| `workspace_id` | The older key for the same, which takes the Workspace ID (a GUID) only. A profile sets one of the two. |
 | `mde_url` | A regional Defender for Endpoint endpoint, e.g. `https://api-eu.securitycenter.microsoft.com`. |
 
 ServiceNow profiles are described in [ServiceNow](servicenow.md#configuration). The

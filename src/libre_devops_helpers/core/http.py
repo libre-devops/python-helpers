@@ -65,6 +65,7 @@ class ApiClient:
         allow_http: bool = False,
         auth_scheme: str = "Bearer",
         network_settings: network.NetworkSettings | None = None,
+        error_hints: Mapping[str, str] | None = None,
     ) -> None:
         parts = urlsplit(base_url)
         if not parts.netloc or parts.scheme not in {"https", "http"}:
@@ -100,6 +101,8 @@ class ApiClient:
         self._max_backoff = max_backoff
         self._max_retry_after = max_retry_after
         self._sleep = sleep
+        # What to tell a person about an error code this API is known to give.
+        self._error_hints = dict(error_hints or {})
 
     def ensure_token(self) -> None:
         """Get the token now, in this thread.
@@ -279,7 +282,7 @@ class ApiClient:
             if response.status_code in RETRY_STATUSES and attempt < self._max_attempts:
                 self._wait(attempt, retry_after_seconds(response), f"HTTP {response.status_code}")
                 continue
-            raise error_from_response(self.name, response)
+            raise error_from_response(self.name, response, self._error_hints)
 
     def _verify_with(self) -> bool | str:
         """What requests verifies against: the resolved bundle, or what was asked for."""
@@ -321,11 +324,14 @@ def retry_after_seconds(response: requests.Response) -> float | None:
     return max(0.0, (when - datetime.now(UTC)).total_seconds())
 
 
-def error_from_response(name: str, response: requests.Response) -> ApiError:
+def error_from_response(
+    name: str, response: requests.Response, hints: Mapping[str, str] | None = None
+) -> ApiError:
     """Build an ApiError from a failed response, using the service's error body when present.
 
     Graph, Defender, ARM and Key Vault reply ``{"error": {"code", "message"}}``; the Entra
-    token endpoint replies ``{"error": "<code>", "error_description": "..."}``.
+    token endpoint replies ``{"error": "<code>", "error_description": "..."}``. ``hints``
+    gives the hint for an error code the API is known to give, before the general ones.
     """
     code: str | None = None
     message: str | None = None
@@ -367,7 +373,7 @@ def error_from_response(name: str, response: requests.Response) -> ApiError:
             "Access policy (a claims challenge); sign in again"
         )
     else:
-        hint = _hint(status, text.lower())
+        hint = (hints or {}).get(code or "") or _hint(status, text.lower())
     return ApiError(text, status=status, code=code, request_id=request_id, hint=hint)
 
 

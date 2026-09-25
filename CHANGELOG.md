@@ -3,6 +3,38 @@
 All notable changes to libre-devops-helpers are recorded here. The project follows
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- `ldo azure parse-id ID...`: split Azure resource ids into their parts, offline: the
+  subscription, resource group, name, type, the resources above a child resource, and what
+  an extension resource is on; management group ids too. `-o json` has the keys Terraform's
+  `provider::azurerm::parse_resource_id` gives, plus `id` and `management_group_name`. Ids
+  come from arguments, stdin or `-f`.
+- `--workspace` on `ldo logs query` and `ldo logs ingestion` takes a workspace's resource id
+  or its name as well as its Workspace ID (the GUID), and looks the Workspace ID up, with a
+  note saying which workspace it found. The resource id of anything else is refused, saying
+  what it is the id of.
+- A profile's `workspace` key, which takes any of the three the same way. `workspace_id`
+  still works, for the Workspace ID alone, and now says so when given the resource id.
+- For library use: `microsoft.resource_ids` (`parse_resource_id`, `ResourceId`),
+  `microsoft.workspaces` (`workspace_ref`), `AzureClient.workspace()` and
+  `LogAnalyticsWorkspace`.
+- `ldo self-test` shows each failure in full, with its hint, after the table, which cuts
+  long details short.
+
+### Fixed
+
+- `ldo xdr timeline --endpoint` failed with HTTP 400: the Defender for Endpoint API has no
+  alert tables. Alerts are now left out there, with a note, and `--type alert --endpoint` is
+  refused with the reason.
+- A Graph refusal for a missing Entra ID P1 or P2 licence, or for a user without one of the
+  roles an API is limited to (sign-in logs, for one), now says which, not only that a
+  permission is missing.
+- Automation account ids, Defender for Cloud assessments and PIM scopes are read with the
+  same resource id parser, so each part is checked the same way everywhere.
+
 ## 0.5.1rc2
 
 ### Added

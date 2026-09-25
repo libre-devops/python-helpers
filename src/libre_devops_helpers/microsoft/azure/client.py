@@ -1,8 +1,8 @@
 """Read-only Azure Resource Manager queries.
 
-Subscriptions, Azure Resource Graph, RBAC role assignments, and Defender for Cloud
-(secure score, controls, recommendations, plans). Access rests on Azure RBAC (Reader is
-enough for all of it), not on token scopes.
+Subscriptions, Azure Resource Graph, RBAC role assignments, Defender for Cloud (secure
+score, controls, recommendations, plans), and finding a Log Analytics workspace by any of
+its names. Access rests on Azure RBAC (Reader is enough for all of it), not on token scopes.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from libre_devops_helpers.core import fields
-from libre_devops_helpers.core.errors import ApiError, InputError
+from libre_devops_helpers.core.errors import AmbiguousError, ApiError, InputError, NotFoundError
 from libre_devops_helpers.core.http import ApiClient
 from libre_devops_helpers.core.tables import QueryResult
 from libre_devops_helpers.core.util import require_guid
@@ -20,10 +20,12 @@ from libre_devops_helpers.microsoft.azure.models import (
     Assessment,
     AzureRoleAssignment,
     DefenderPlan,
+    LogAnalyticsWorkspace,
     SecureScore,
     SecureScoreControl,
     Subscription,
 )
+from libre_devops_helpers.microsoft.workspaces import WORKSPACE_HINT, WORKSPACE_TYPE, WorkspaceRef
 
 SUBSCRIPTIONS_API = "2022-12-01"
 RESOURCE_GRAPH_API = "2022-10-01"
@@ -31,6 +33,7 @@ AUTHORIZATION_API = "2022-04-01"
 SECURE_SCORE_API = "2020-01-01"
 ASSESSMENTS_API = "2021-06-01"
 PRICINGS_API = "2024-01-01"
+WORKSPACES_API = "2023-09-01"
 
 # Resource Graph returns at most 1000 rows a page.
 _GRAPH_PAGE = 1000
@@ -97,6 +100,56 @@ class AzureClient(ArmServiceClient):
                 truncated = True
                 break
         return QueryResult.from_records(rows, truncated=truncated)
+
+    # Log Analytics workspaces -----------------------------------------------------
+
+    def workspace(
+        self, ref: WorkspaceRef, *, subscriptions: Iterable[str] = ()
+    ) -> LogAnalyticsWorkspace:
+        """The workspace ``ref`` names, by its resource id, its name or its Workspace ID.
+
+        A resource id is read from Resource Manager directly; a name or a Workspace ID is
+        looked for with Resource Graph, in ``subscriptions`` when given, else in every
+        subscription the credential can read. NotFoundError when there is none (or the
+        credential cannot read it), AmbiguousError when a name is in more than one place.
+        """
+        if ref.kind == "resource id":
+            return self._workspace_by_id(ref.value)
+        column = "name" if ref.kind == "name" else "properties.customerId"
+        # workspace_ref has checked the value: a name has only letters, digits and
+        # hyphens, and a Workspace ID is a GUID, so neither can end the string early.
+        result = self.resource_graph(
+            f"resources | where type =~ '{WORKSPACE_TYPE}' and {column} =~ '{ref.value}'"
+            " | project id, name, location, properties",
+            subscriptions=subscriptions,
+            limit=10,
+        )
+        found = [LogAnalyticsWorkspace.from_json(row) for row in result.rows]
+        if not found:
+            raise NotFoundError(
+                f"no Log Analytics workspace with the {ref.kind} {ref.value!r}",
+                hint="check the name and the profile's subscription, and that you have "
+                f"Reader on the workspace; or {WORKSPACE_HINT}",
+            )
+        if len(found) > 1:
+            places = ", ".join(sorted(item.id for item in found))
+            raise AmbiguousError(
+                f"{len(found)} workspaces are named {ref.value!r}: {places}",
+                hint="give the one you mean by its resource id or Workspace ID",
+            )
+        return _with_workspace_id(found[0])
+
+    def _workspace_by_id(self, resource_id: str) -> LogAnalyticsWorkspace:
+        try:
+            data = self.api.get(resource_id, params={"api-version": WORKSPACES_API})
+        except ApiError as exc:
+            if exc.status == 404:
+                raise NotFoundError(
+                    f"no Log Analytics workspace at {resource_id!r}",
+                    hint="check the subscription, resource group and name in the id",
+                ) from exc
+            raise
+        return _with_workspace_id(LogAnalyticsWorkspace.from_json(data))
 
     # RBAC -------------------------------------------------------------------------
 
@@ -206,3 +259,13 @@ class AzureClient(ArmServiceClient):
 
 def _subscription_id(value: str) -> str:
     return require_guid(value, "a subscription id")
+
+
+def _with_workspace_id(workspace: LogAnalyticsWorkspace) -> LogAnalyticsWorkspace:
+    """``workspace``, when Resource Manager gave its Workspace ID, as it always should."""
+    if not workspace.workspace_id:
+        raise NotFoundError(
+            f"Resource Manager gave no Workspace ID (customerId) for {workspace.id!r}",
+            hint="give the Workspace ID itself, from the workspace's Overview page",
+        )
+    return workspace

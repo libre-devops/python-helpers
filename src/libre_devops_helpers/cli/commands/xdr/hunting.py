@@ -118,14 +118,16 @@ def timeline(
     Defender has no API for the portal's device timeline, so this asks Advanced Hunting's
     device tables for the same events: processes, network connections, files, registry,
     logons, image loads, other device events and alerts. Advanced Hunting keeps 30 days;
-    the portal reaches further back. Through Graph like 'xdr hunt', or --endpoint. The
-    default is the last 24 hours and the newest 1000 events. Times show in local time;
+    the portal reaches further back. Through Graph like 'xdr hunt', or --endpoint, which
+    has the device tables but not the alert ones, so no alerts. The default is the last 24
+    hours and the newest 1000 events. Times show in local time;
     -o json has them in UTC.
     """
     window = time_window(
         today, yesterday, since, start, end, lambda now: last(timedelta(hours=24), now)
     )
-    query = timeline_query(device, window, parse_kinds(kinds or []), limit)
+    chosen = parse_kinds(kinds or [], device_tables_only=endpoint)
+    query = timeline_query(device, window, chosen, limit)
     if show_query:
         render.echo(query)
         return
@@ -142,6 +144,8 @@ def timeline(
     render.note(
         f"{len(found.events)} event(s) on {device}, {window.label} (profile {selected.name})"
     )
+    if endpoint and not kinds:
+        render.note("alerts are left out: the Defender for Endpoint API has no alert tables")
     for warning in _timeline_warnings(found, window):
         render.warn(warning)
 

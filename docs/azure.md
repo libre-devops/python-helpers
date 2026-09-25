@@ -18,6 +18,28 @@ subscription the credential can see in the tenant; `-s`/`--subscription` (repeat
 chooses. `rbac` includes assignments made to the principal's groups and those inherited from
 management groups.
 
+## Reading a resource id
+
+```bash
+ldo azure parse-id /subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-net/providers/Microsoft.Network/virtualNetworks/vnet1/subnets/snet-app
+ldo azure parse-id "$ID" -o json | jq -r '.[0].resource_group_name'
+az resource list --query "[].id" -o tsv | ldo azure parse-id - -o csv > resources.csv
+```
+
+`parse-id` splits Azure Resource Manager (ARM) resource ids into their parts: the
+subscription, the resource group, the resource's name and type, the resources above a child
+resource (a subnet's virtual network), and what an extension resource (a lock, a role
+assignment, a Defender assessment) is on. Management group ids, and ids of subscriptions and
+resource groups themselves, read too. It works offline, so the resource need not exist and no
+sign-in is needed.
+
+With `-o json` each id comes back with the keys Terraform's
+`provider::azurerm::parse_resource_id` gives: `full_resource_type`, `parent_resources`,
+`resource_group_name`, `resource_name`, `resource_provider`, `resource_scope`,
+`resource_type` and `subscription_id`, plus `id` and `management_group_name`. An id that
+cannot be read is named on stderr with what is wrong with it, after the rest are shown, and
+the command exits 1.
+
 ## Automation
 
 ```bash
@@ -54,11 +76,27 @@ window.
 
 ```bash
 ldo logs query "Heartbeat | summarize arg_max(TimeGenerated, *) by Computer" --timespan 1d
-ldo logs query --file queries/sign-ins.kql --workspace <workspace id> -o csv
+ldo logs query --file queries/sign-ins.kql --workspace law-soc -o csv
 ```
 
-Without `--workspace`, the profile's `workspace_id` is used. A Sentinel workspace is a Log
-Analytics workspace, so this reads its tables too.
+A Sentinel workspace is a Log Analytics workspace, so this reads its tables too. Without
+`--workspace`, the profile's `workspace` is used.
+
+A workspace has three names, and it is easy to hand over the wrong one: `--workspace` (and
+the profile's `workspace`) takes any of them.
+
+| Name | Looks like | Where to find it |
+| --- | --- | --- |
+| Workspace ID | a GUID | the workspace's Overview page. The query API wants this one. |
+| Resource id | `/subscriptions/.../resourceGroups/rg-soc/providers/Microsoft.OperationalInsights/workspaces/law-soc` | the Overview page's JSON view, or `az monitor log-analytics workspace show` |
+| Name | `law-soc` | the portal |
+
+A Workspace ID is used as it is. A resource id or a name is looked up in Resource Manager
+first (a name across every subscription the credential can read, which needs Reader on the
+workspace), and a note says which workspace it found and its Workspace ID. A name two
+workspaces share is refused with both resource ids to choose from. The resource id of
+anything else (a resource group, a Key Vault) is refused before anything is sent, saying what
+it is the id of.
 
 ### Which tables are receiving data
 

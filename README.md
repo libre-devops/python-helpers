@@ -44,7 +44,7 @@ PowerShell module, and importable as a library too.
 | `ldo xdr` | Defender machines, alerts, vulnerabilities, indicators, Advanced Hunting, a device's timeline, custom detection rules (and their export to YAML) | [defender](docs/defender.md) |
 | `ldo xdr incidents` | the Defender XDR queue, Sentinel's included: top, latest, between days, summary | [defender](docs/defender.md#incidents-sentinels-included) |
 | `ldo graph` | any Graph GET, objects by name, `whoami`, a Graph token, hunting | [graph](docs/graph.md) |
-| `ldo azure` | subscriptions, Resource Graph, role assignments, Defender for Cloud | [azure](docs/azure.md) |
+| `ldo azure` | subscriptions, Resource Graph, role assignments, Defender for Cloud, splitting resource ids into their parts | [azure](docs/azure.md) |
 | `ldo azure automation` | Automation accounts: runbook jobs, and each job's logs and output | [azure](docs/azure.md#automation) |
 | `ldo keyvault` | secrets, certificates and keys close to expiry | [azure](docs/azure.md#key-vault) |
 | `ldo logs` | KQL against a Log Analytics or Sentinel workspace, and which tables are receiving data | [azure](docs/azure.md#log-analytics) |

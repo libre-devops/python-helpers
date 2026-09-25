@@ -7,7 +7,7 @@ The code is layered by vendor, and a test enforces the layering:
 | Package | Depends on | Holds |
 | --- | --- | --- |
 | `core` | nothing | errors, config, the brand, the token cache, the HTTP client (retries, Retry-After, paging), polling, input parsing, query results, logging, sorting, colour |
-| `microsoft` | `core` | clouds, APIs as tokens see them, token checks, credentials, the Azure CLI runner, `[microsoft]` profiles |
+| `microsoft` | `core` | clouds, APIs as tokens see them, token checks, credentials, the Azure CLI runner, `[microsoft]` profiles, resource ids (`resource_ids`), a workspace's three names (`workspaces`) |
 | `microsoft.azcli` | `core`, `microsoft` | Azure CLI accounts, sign-in and profile switching |
 | `microsoft.entra` | `core`, `microsoft` | devices, users, groups, roles, sign-ins, app credentials, Conditional Access |
 | `microsoft.xdr` | `core`, `microsoft` | Defender machines, alerts, vulnerabilities, indicators, hunting (the endpoint API), device timelines |
@@ -15,7 +15,7 @@ The code is layered by vendor, and a test enforces the layering:
 | `microsoft.incidents` | `core`, `microsoft` | Defender XDR incidents, Sentinel's included |
 | `microsoft.detections` | `core`, `microsoft` | custom detection rules, and their export to the Terraform module's YAML |
 | `microsoft.intune` | `core`, `microsoft` | managed devices and compliance |
-| `microsoft.azure` | `core`, `microsoft` | subscriptions, Resource Graph, RBAC, Defender for Cloud |
+| `microsoft.azure` | `core`, `microsoft` | subscriptions, Resource Graph, RBAC, Defender for Cloud, finding a Log Analytics workspace |
 | `microsoft.keyvault`, `microsoft.loganalytics` | `core`, `microsoft` | secret, certificate and key metadata; KQL against a workspace, and its ingestion |
 | `microsoft.pim` | `core`, `microsoft` | PIM for Azure resources, Entra roles and groups |
 | `microsoft.logicapps` | `core`, `microsoft` | Logic App definitions: offline checks, export, validation |

@@ -155,7 +155,11 @@ def self_test(
         str | None, typer.Option("--group", help="An Entra group, by display name or object id.")
     ] = None,
     workspace: Annotated[
-        str | None, typer.Option("--workspace", help="A Log Analytics workspace id.")
+        str | None,
+        typer.Option(
+            "--workspace",
+            help="A Log Analytics workspace: its Workspace ID, its resource id or its name.",
+        ),
     ] = None,
     snow: Annotated[
         bool, typer.Option("--snow", help="Also test the ServiceNow commands.")
@@ -182,7 +186,8 @@ def self_test(
 
     Output is thrown away; only each command's outcome is shown: ok, attention (exit 3, as
     designed), refused (an explained error, often a permission), usage, or CRASH (a bug,
-    with the line of ldo it came from). Exits 1 when anything crashed.
+    with the line of ldo it came from). After the table, each failure is shown in full with
+    its hint. Exits 1 when anything crashed.
     """
     names = {
         "device": device,
@@ -299,3 +304,17 @@ def _show(outcomes: list[Outcome], output: Output) -> None:
         )
     records: list[dict[str, Any]] = [vars(item) for item in outcomes]
     render.emit(output, ["COMMAND", "RESULT", "TIME", "DETAIL"], rows, records)
+    if output is Output.TABLE:
+        _show_details(outcomes)
+
+
+def _show_details(outcomes: list[Outcome]) -> None:
+    """Each failure in full, since the table cuts DETAIL short when commands are long: what
+    it said, its hint, and for a crash, the lines of the package it came through."""
+    failed = [item for item in outcomes if item.result in {"refused", "usage", "CRASH"}]
+    for item in failed:
+        render.echo()
+        render.echo(render.title(f"{item.result}: {brand.COMMAND} {item.command}"))
+        lines = [("Said", item.detail), ("Hint", item.hint or "")]
+        lines += [("At", where) for where in item.where]
+        render.echo(render.pairs(lines))

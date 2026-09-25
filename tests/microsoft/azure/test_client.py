@@ -5,8 +5,9 @@ import pytest
 from fakes.http import fake_session, json_body
 from fakes.ids import OTHER_TENANT, SUBSCRIPTION, TENANT
 from fakes.tokens import StaticTokens
-from libre_devops_helpers.core.errors import LdoError
+from libre_devops_helpers.core.errors import AmbiguousError, ApiError, LdoError, NotFoundError
 from libre_devops_helpers.microsoft.azure import AzureClient
+from libre_devops_helpers.microsoft.workspaces import workspace_ref
 
 PRINCIPAL = "88888888-8888-8888-8888-888888888888"
 
@@ -168,3 +169,75 @@ def test_defender_plans_report_their_tier():
     client, _, _ = azure(lambda request: (200, plans))
     found = client.defender_plans(SUBSCRIPTION)
     assert [(p.name, p.enabled) for p in found] == [("Api", False), ("VirtualMachines", True)]
+
+
+WORKSPACE_ID = (
+    f"/subscriptions/{SUBSCRIPTION}/resourceGroups/rg-soc"
+    "/providers/Microsoft.OperationalInsights/workspaces/law-soc"
+)
+CUSTOMER_ID = "abababab-abab-abab-abab-abababababab"
+LAW = {
+    "id": WORKSPACE_ID,
+    "name": "law-soc",
+    "location": "uksouth",
+    "properties": {"customerId": CUSTOMER_ID.upper()},
+}
+
+
+def test_a_workspace_is_read_by_its_resource_id():
+    client, adapter, _ = azure(lambda request: (200, LAW))
+    found = client.workspace(workspace_ref(WORKSPACE_ID))
+    assert (found.name, found.workspace_id) == ("law-soc", CUSTOMER_ID)
+    assert (found.subscription_id, found.resource_group, found.location) == (
+        SUBSCRIPTION,
+        "rg-soc",
+        "uksouth",
+    )
+    assert urlsplit(adapter.requests[0].url).path == WORKSPACE_ID
+    assert query(adapter.requests[0])["api-version"] == ["2023-09-01"]
+
+
+def test_a_workspace_that_is_not_there_is_not_found():
+    client, _, _ = azure(lambda request: (404, {"error": {"code": "ResourceNotFound"}}))
+    with pytest.raises(NotFoundError, match="no Log Analytics workspace at"):
+        client.workspace(workspace_ref(WORKSPACE_ID))
+
+
+def test_other_failures_reading_a_workspace_are_left_as_they_are():
+    client, _, _ = azure(lambda request: (403, {"error": {"code": "AuthorizationFailed"}}))
+    with pytest.raises(ApiError) as caught:
+        client.workspace(workspace_ref(WORKSPACE_ID))
+    assert caught.value.status == 403
+
+
+@pytest.mark.parametrize(
+    ("given", "clause"),
+    [("law-soc", "name =~ 'law-soc'"), (CUSTOMER_ID, f"properties.customerId =~ '{CUSTOMER_ID}'")],
+    ids=["name", "workspace-id"],
+)
+def test_a_workspace_is_found_by_name_or_workspace_id_with_resource_graph(given, clause):
+    client, adapter, _ = azure(lambda request: (200, {"data": [LAW]}))
+    found = client.workspace(workspace_ref(given), subscriptions=[SUBSCRIPTION])
+    assert found.id == WORKSPACE_ID
+    body = json_body(adapter.requests[0])
+    assert body["query"] == (
+        f"resources | where type =~ 'Microsoft.OperationalInsights/workspaces' and {clause}"
+        " | project id, name, location, properties"
+    )
+    assert body["subscriptions"] == [SUBSCRIPTION]
+
+
+def test_a_workspace_name_matching_nothing_or_several_says_so():
+    client, _, _ = azure(lambda request: (200, {"data": []}))
+    with pytest.raises(NotFoundError, match="no Log Analytics workspace with the name"):
+        client.workspace(workspace_ref("law-soc"))
+    other = {**LAW, "id": WORKSPACE_ID.replace("rg-soc", "rg-dev")}
+    client, _, _ = azure(lambda request: (200, {"data": [LAW, other]}))
+    with pytest.raises(AmbiguousError, match="2 workspaces are named 'law-soc'"):
+        client.workspace(workspace_ref("law-soc"))
+
+
+def test_a_workspace_without_a_workspace_id_is_refused():
+    client, _, _ = azure(lambda request: (200, {**LAW, "properties": {}}))
+    with pytest.raises(NotFoundError, match="no Workspace ID"):
+        client.workspace(workspace_ref(WORKSPACE_ID))

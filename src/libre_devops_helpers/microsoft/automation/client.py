@@ -16,6 +16,7 @@ from libre_devops_helpers.core.errors import AmbiguousError, ApiError, InputErro
 from libre_devops_helpers.core.util import require_guid
 from libre_devops_helpers.microsoft.api_clients import ArmServiceClient
 from libre_devops_helpers.microsoft.automation.models import AutomationAccount, Job, JobStream
+from libre_devops_helpers.microsoft.resource_ids import looks_like_resource_id, parse_resource_id
 
 API_VERSION = "2023-11-01"
 PROVIDER = "Microsoft.Automation/automationAccounts"
@@ -24,11 +25,6 @@ _ACCOUNT = re.compile(r"[A-Za-z0-9-]{1,50}")
 _GROUP = re.compile(r"[A-Za-z0-9._()-]{1,90}")
 _JOB = re.compile(r"[A-Za-z0-9-]{1,64}")
 _STREAM = re.compile(r"[A-Za-z0-9:._-]{1,128}")
-_ACCOUNT_ID = re.compile(
-    r"^/subscriptions/(?P<subscription>[^/]+)/resourceGroups/(?P<group>[^/]+)"
-    r"/providers/Microsoft\.Automation/automationAccounts/(?P<name>[^/]+)$",
-    re.IGNORECASE,
-)
 
 
 class AutomationClient(ArmServiceClient):
@@ -57,15 +53,10 @@ class AutomationClient(ArmServiceClient):
         A name several accounts share is refused, with their ids to choose from.
         """
         ref = ref.strip()
-        by_id = _ACCOUNT_ID.match(ref)
-        if by_id:
-            path = (
-                f"/subscriptions/{_guid(by_id['subscription'])}/resourceGroups/"
-                f"{_group(by_id['group'])}/providers/{PROVIDER}/{_account(by_id['name'])}"
-            )
+        if looks_like_resource_id(ref):
             try:
                 return AutomationAccount.from_json(
-                    self.api.get(path, params={"api-version": API_VERSION})
+                    self.api.get(_path(ref), params={"api-version": API_VERSION})
                 )
             except ApiError as exc:
                 if exc.status == 404:
@@ -158,12 +149,20 @@ def _newest_first(job: Job) -> tuple[bool, float]:
 
 
 def _account_path(account: AutomationAccount) -> str:
-    matched = _ACCOUNT_ID.match(account.id)
-    if not matched:
-        raise InputError(f"{account.id!r} is not an Automation account's resource id")
+    return _path(account.id)
+
+
+def _path(resource_id: str) -> str:
+    """An Automation account's ARM path, from its resource id, with each part checked."""
+    found = parse_resource_id(resource_id)
+    if not found.is_type(PROVIDER) or not found.resource_group or found.parent is not None:
+        raise InputError(
+            f"{resource_id!r} is not an Automation account's resource id",
+            hint=f"it is the resource id of a {found.type or 'tenant'}",
+        )
     return (
-        f"/subscriptions/{_guid(matched['subscription'])}/resourceGroups/"
-        f"{_group(matched['group'])}/providers/{PROVIDER}/{_account(matched['name'])}"
+        f"/subscriptions/{found.subscription}/resourceGroups/{_group(found.resource_group)}"
+        f"/providers/{PROVIDER}/{_account(found.name)}"
     )
 
 

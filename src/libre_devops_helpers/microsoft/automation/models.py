@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Any
 
 from libre_devops_helpers.core import fields
+from libre_devops_helpers.microsoft.resource_ids import try_parse_resource_id
 
 # Job states that need someone to look: the runbook did not finish as it should.
 FAILED = frozenset({"Failed", "Suspended", "Stopped", "Blocked"})
@@ -38,17 +39,12 @@ class AutomationAccount:
         """An Automation account as ARM returns it; its subscription and resource group come from
         its id."""
         resource_id = fields.text(data, "id")
-        parts = resource_id.split("/")
-        lowered = [part.lower() for part in parts]
-
-        def after(segment: str) -> str:
-            return parts[lowered.index(segment) + 1] if segment in lowered[:-1] else ""
-
+        parsed = try_parse_resource_id(resource_id)
         return cls(
             id=resource_id,
             name=fields.text(data, "name"),
-            subscription_id=after("subscriptions"),
-            resource_group=after("resourcegroups"),
+            subscription_id=parsed.subscription if parsed else "",
+            resource_group=parsed.resource_group if parsed else "",
             location=fields.text(data, "location"),
             raw=dict(data),
         )

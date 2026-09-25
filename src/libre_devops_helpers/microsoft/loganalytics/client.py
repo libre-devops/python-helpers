@@ -1,8 +1,8 @@
 """Run KQL against a Log Analytics (or Sentinel) workspace through the query API.
 
 Access rests on Azure RBAC on the workspace (Log Analytics Reader is enough), not on
-token scopes. The workspace is named by its workspace id (the GUID the portal calls the
-"Workspace ID"), not by its resource id.
+token scopes. The workspace is named by its Workspace ID (a GUID, on its Overview page),
+not by its resource id: ``microsoft.azure`` looks one up from the other.
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ from libre_devops_helpers.core.tables import QueryResult
 from libre_devops_helpers.core.util import require_guid
 from libre_devops_helpers.microsoft.clouds import PUBLIC
 from libre_devops_helpers.microsoft.config import Profile
+from libre_devops_helpers.microsoft.resource_ids import looks_like_resource_id
 
 
 class LogAnalyticsClient(ServiceClient):
@@ -74,10 +75,17 @@ class LogAnalyticsClient(ServiceClient):
         the query itself. A partial result comes back with the service's error in
         ``warnings`` rather than failing.
         """
+        if looks_like_resource_id(workspace_id):
+            raise InputError(
+                f"that is the workspace's resource id (an ARM id), not its Workspace ID: "
+                f"{workspace_id.strip()!r}",
+                hint="the query API wants the Workspace ID, a GUID on the workspace's Overview "
+                "page; AzureClient.workspace() looks it up from the resource id",
+            )
         workspace_id = require_guid(
             workspace_id,
-            "a Log Analytics workspace id",
-            hint="use the workspace's Workspace ID (a GUID), not its resource id",
+            "a Log Analytics Workspace ID",
+            hint="use the workspace's Workspace ID, a GUID on its Overview page",
         )
         if not query.strip():
             raise InputError("the Log Analytics query is empty")

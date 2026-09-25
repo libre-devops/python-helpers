@@ -76,6 +76,14 @@ def test_a_403_from_a_suspended_service_says_so():
     assert "suspended" in (caught.value.hint or "")
 
 
+def test_an_apis_own_error_codes_get_the_hints_it_gives_them():
+    body = {"error": {"code": "NeedsLicence", "message": "Forbidden"}}
+    api, _, _ = client(lambda request: (403, body), error_hints={"NeedsLicence": "buy one"})
+    with pytest.raises(ApiError) as caught:
+        api.get("/x")
+    assert caught.value.hint == "buy one"
+
+
 def test_connection_errors_are_retried_then_reported():
     api, adapter, _ = client(lambda request: requests.ConnectionError("down"), max_attempts=2)
     with pytest.raises(ApiError, match="after 2 attempts"):

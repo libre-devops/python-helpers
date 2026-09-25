@@ -76,8 +76,10 @@ How it differs from the portal's timeline:
 
 Times show in local time; `-o json` has them in UTC, as the tables keep them. Like `xdr
 hunt`, it goes through Graph (`ThreatHunting.Read.All`) unless you pass `--endpoint`, which
-works with the Azure CLI's sign-in. `--from` and `--to` take a day, or a day and a time
-(local, or UTC with a `Z`); `--today`, `--yesterday` and `--since` work too.
+works with the Azure CLI's sign-in. The Defender for Endpoint API has the device tables but
+not the alert ones, so with `--endpoint` alerts are left out (a note says so), and `--type
+alert --endpoint` is refused. `--from` and `--to` take a day, or a day and a time (local, or
+UTC with a `Z`); `--today`, `--yesterday` and `--since` work too.
 
 ## Incidents, Sentinel's included
 

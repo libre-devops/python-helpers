@@ -118,3 +118,52 @@ def test_defender_plans_show_which_are_on(config_file):
     ]
     table = run(config_file, handler, ["azure", "defender-plans", "-s", SUBSCRIPTION])
     assert "deprecated" in table.stdout
+
+
+SUBNET = (
+    f"/subscriptions/{SUBSCRIPTION}/resourceGroups/rg-net"
+    "/providers/Microsoft.Network/virtualNetworks/vnet1/subnets/snet-app"
+)
+LOCK = f"{SUBNET}/providers/Microsoft.Authorization/locks/no-delete"
+
+
+def test_parse_id_splits_ids_offline_into_terraforms_keys(config_file):
+    result = run(config_file, routes({}), ["azure", "parse-id", SUBNET, "-o", "json"])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == [
+        {
+            "id": SUBNET,
+            "full_resource_type": "Microsoft.Network/virtualNetworks/subnets",
+            "parent_resources": {"virtualNetworks": "vnet1"},
+            "resource_group_name": "rg-net",
+            "resource_name": "snet-app",
+            "resource_provider": "Microsoft.Network",
+            "resource_scope": None,
+            "resource_type": "subnets",
+            "subscription_id": SUBSCRIPTION,
+            "management_group_name": None,
+        }
+    ]
+
+
+def test_parse_id_reads_stdin_and_shows_what_an_extension_is_on(config_file):
+    result = run(config_file, routes({}), ["azure", "parse-id", "-", "-o", "csv"], stdin=LOCK)
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines() == [
+        "NAME,TYPE,RESOURCE GROUP,SUBSCRIPTION,PARENTS,SCOPE",
+        f"no-delete,Microsoft.Authorization/locks,rg-net,{SUBSCRIPTION},,{SUBNET}",
+    ]
+
+
+def test_parse_id_shows_the_good_ids_then_fails_for_the_rest(config_file):
+    result = run(config_file, routes({}), ["azure", "parse-id", SUBNET, "law-soc", "-o", "tsv"])
+    assert result.exit_code == 1
+    assert result.stdout.startswith("snet-app\t")
+    assert "not an Azure resource id: 'law-soc'" in result.stderr
+    assert "1 of 2 id(s) are not Azure resource ids" in str(result.exception)
+
+
+def test_parse_id_of_one_bad_id_says_what_is_wrong_with_it(config_file):
+    result = run(config_file, routes({}), ["azure", "parse-id", f"/subscriptions/{SUBSCRIPTION}/x"])
+    assert result.exit_code == 1
+    assert "expected providers/NAMESPACE at x" in str(result.exception)

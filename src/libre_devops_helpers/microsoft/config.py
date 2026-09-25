@@ -25,9 +25,11 @@ from libre_devops_helpers.core.config import (
     table,
     text,
 )
-from libre_devops_helpers.core.errors import ConfigError
+from libre_devops_helpers.core.errors import ConfigError, InputError
 from libre_devops_helpers.core.token_store import DEFAULT_TOKEN_CACHE, TOKEN_CACHES
 from libre_devops_helpers.microsoft.clouds import CLOUDS, PUBLIC, Cloud, get_cloud
+from libre_devops_helpers.microsoft.resource_ids import looks_like_resource_id
+from libre_devops_helpers.microsoft.workspaces import workspace_ref
 
 SECTION = "microsoft"
 PLACEHOLDER_ID = "00000000-0000-0000-0000-000000000000"
@@ -54,6 +56,7 @@ _PROFILE_KEYS = frozenset(
         "mde_url",
         "auth",
         "client_id",
+        "workspace",
         "workspace_id",
         "token_cache",
     }
@@ -89,7 +92,8 @@ tenant_id = "{PLACEHOLDER_ID}"
 # Other optional profile keys:
 #
 # cloud = "public"          public (the default), usgov or china; match it with 'az cloud set'
-# workspace_id = "<guid>"   the Log Analytics workspace 'logs query' uses by default
+# workspace = "law-soc"     the Log Analytics workspace 'logs' uses by default: its name,
+#                           its resource id, or its Workspace ID (the GUID on its Overview page)
 #
 # auth picks how the profile gets tokens. The default is your Azure CLI sign-in.
 # auth = "interactive"         needs client_id of your own public client app; signs you in
@@ -124,6 +128,9 @@ class Profile:
     mde_url: str | None = None
     auth: str = "azure-cli"
     client_id: str | None = None
+    # The Log Analytics workspace by any of its names (``workspace``), or by its Workspace ID
+    # alone (``workspace_id``, the older key); at most one of them is set.
+    workspace: str | None = None
     workspace_id: str | None = None
     # Where an interactive or device-code sign-in is kept between commands.
     token_cache: str = DEFAULT_TOKEN_CACHE
@@ -239,6 +246,33 @@ def _parse_profile(name: str, value: object, path: str) -> Profile:
         mde_url=https_url(data, "mde_url", where),
         auth=auth,
         client_id=client_id,
-        workspace_id=guid(data, "workspace_id", where),
+        workspace=_workspace(data, where),
+        workspace_id=_workspace_id(data, where),
         token_cache=token_cache or DEFAULT_TOKEN_CACHE,
     )
+
+
+def _workspace(data: Mapping[str, Any], where: str) -> str | None:
+    """``workspace``: a Log Analytics workspace by its name, resource id or Workspace ID."""
+    value = text(data, "workspace", where)
+    if value is None:
+        return None
+    if "workspace_id" in data:
+        raise ConfigError(f"{where}: set workspace or workspace_id, not both")
+    try:
+        return workspace_ref(value).value
+    except InputError as exc:
+        raise ConfigError(f"{where}: workspace: {exc}", hint=exc.hint) from exc
+
+
+def _workspace_id(data: Mapping[str, Any], where: str) -> str | None:
+    """``workspace_id``: the Workspace ID alone, saying so when given the resource id."""
+    value = data.get("workspace_id")
+    if isinstance(value, str) and looks_like_resource_id(value):
+        raise ConfigError(
+            f"{where}: workspace_id is the workspace's Workspace ID (a GUID); that is its "
+            "resource id (an ARM id)",
+            hint="set it as workspace instead, which takes the resource id, the name or the "
+            "Workspace ID",
+        )
+    return guid(data, "workspace_id", where)

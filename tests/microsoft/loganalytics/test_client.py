@@ -6,7 +6,7 @@ import pytest
 from fakes.http import fake_session, json_body
 from fakes.ids import TENANT
 from fakes.tokens import StaticTokens
-from libre_devops_helpers.core.errors import ApiError, LdoError
+from libre_devops_helpers.core.errors import ApiError, InputError
 from libre_devops_helpers.microsoft.loganalytics import LogAnalyticsClient
 
 WORKSPACE = "abababab-abab-abab-abab-abababababab"
@@ -54,8 +54,20 @@ def test_an_error_with_no_table_fails():
         client.query(WORKSPACE, "Heartbeat |")
 
 
+def test_a_resource_id_is_refused_as_one():
+    client, adapter, _ = logs(lambda request: (200, {}))
+    resource_id = (
+        f"/subscriptions/{TENANT}/resourceGroups/rg-soc"
+        "/providers/Microsoft.OperationalInsights/workspaces/law-soc"
+    )
+    with pytest.raises(InputError, match="resource id") as caught:
+        client.query(resource_id, "Heartbeat")
+    assert "Workspace ID" in (caught.value.hint or "")
+    assert adapter.requests == []
+
+
 def test_the_workspace_must_be_its_guid():
     client, adapter, _ = logs(lambda request: (200, {}))
-    with pytest.raises(LdoError, match="workspace id"):
-        client.query("/subscriptions/x/resourceGroups/y/workspaces/law", "Heartbeat")
+    with pytest.raises(InputError, match="Workspace ID"):
+        client.query("law-soc", "Heartbeat")
     assert adapter.requests == []

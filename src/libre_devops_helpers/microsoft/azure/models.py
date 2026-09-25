@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Any
 
 from libre_devops_helpers.core import fields
+from libre_devops_helpers.microsoft.resource_ids import try_parse_resource_id
 
 
 @dataclass(frozen=True)
@@ -148,14 +149,15 @@ class Assessment:
         status = fields.mapping(properties.get("status"))
         metadata = fields.mapping(properties.get("metadata"))
         assessment_id = fields.text(data, "id")
-        # The assessment id is the resource id with the assessment appended.
-        resource_id = assessment_id.split("/providers/Microsoft.Security/assessments/", 1)[0]
+        # An assessment is an extension resource: its id is the resource's, with the
+        # assessment appended, so what it is on is its scope.
+        parsed = try_parse_resource_id(assessment_id)
         return cls(
             id=assessment_id,
             name=fields.text(properties, "displayName") or fields.text(data, "name"),
             status=fields.text(status, "code"),
             severity=fields.text(metadata, "severity"),
-            resource_id=resource_id,
+            resource_id=parsed.scope if parsed else "",
             cause=fields.text(status, "cause") or fields.text(status, "description"),
             raw=dict(data),
         )
@@ -189,5 +191,36 @@ class DefenderPlan:
             trial_remaining=fields.text(properties, "freeTrialRemainingTime"),
             enabled_since=fields.when(properties, "enablementTime"),
             deprecated=properties.get("deprecated") is True,
+            raw=dict(data),
+        )
+
+
+@dataclass(frozen=True)
+class LogAnalyticsWorkspace:
+    """A Log Analytics workspace by all three of its names: its resource ``id``, its
+    ``name``, and its ``workspace_id`` (the GUID the portal calls the Workspace ID, which the
+    query API wants)."""
+
+    id: str
+    name: str
+    workspace_id: str
+    subscription_id: str
+    resource_group: str
+    location: str
+    raw: Mapping[str, Any] = field(default_factory=dict, compare=False, repr=False)
+
+    @classmethod
+    def from_json(cls, data: Mapping[str, Any]) -> LogAnalyticsWorkspace:
+        """A workspace as ARM returns it (or Resource Graph, projecting the same fields)."""
+        properties = fields.mapping(data.get("properties"))
+        resource_id = fields.text(data, "id")
+        parsed = try_parse_resource_id(resource_id)
+        return cls(
+            id=resource_id,
+            name=fields.text(data, "name"),
+            workspace_id=fields.text(properties, "customerId").lower(),
+            subscription_id=parsed.subscription if parsed else "",
+            resource_group=parsed.resource_group if parsed else "",
+            location=fields.text(data, "location"),
             raw=dict(data),
         )

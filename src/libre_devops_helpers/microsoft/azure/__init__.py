@@ -1,4 +1,5 @@
-"""Azure Resource Manager: subscriptions, Resource Graph, RBAC and Defender for Cloud.
+"""Azure Resource Manager: subscriptions, Resource Graph, RBAC, Defender for Cloud, and
+finding a Log Analytics workspace.
 
 Depends only on ``core`` and the shared Microsoft layer. Access rests on Azure RBAC, so
 there are no token scope requirements to declare. Public API::
@@ -14,6 +15,7 @@ from libre_devops_helpers.microsoft.azure.models import (
     Assessment,
     AzureRoleAssignment,
     DefenderPlan,
+    LogAnalyticsWorkspace,
     SecureScore,
     SecureScoreControl,
     Subscription,
@@ -28,6 +30,7 @@ __all__ = [
     "AzureClient",
     "AzureRoleAssignment",
     "DefenderPlan",
+    "LogAnalyticsWorkspace",
     "SecureScore",
     "SecureScoreControl",
     "Subscription",

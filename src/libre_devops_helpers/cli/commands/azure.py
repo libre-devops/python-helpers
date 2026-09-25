@@ -1,4 +1,5 @@
-"""Azure commands: subscriptions, Resource Graph, RBAC and Defender for Cloud."""
+"""Azure commands: subscriptions, Resource Graph, RBAC, Defender for Cloud, and reading a
+resource id."""
 
 from typing import Annotated
 
@@ -6,20 +7,26 @@ import typer
 
 from libre_devops_helpers.cli import render
 from libre_devops_helpers.cli.options import (
+    ColumnOption,
+    FromFileOption,
     OutputOption,
     ProfileOption,
     QueryFileOption,
+    SheetOption,
     SortOption,
     UniqueOption,
     get_runtime,
+    names,
     read_query,
 )
 from libre_devops_helpers.cli.render import Output
+from libre_devops_helpers.core.errors import InputError
 from libre_devops_helpers.core.util import is_guid
+from libre_devops_helpers.microsoft.resource_ids import ResourceId, parse_resource_id
 
 azure_app = typer.Typer(
     rich_markup_mode="markdown",
-    help="Azure: subscriptions, Resource Graph, RBAC and Defender for Cloud.",
+    help="Azure: subscriptions, Resource Graph, RBAC, Defender for Cloud, and resource ids.",
     no_args_is_help=True,
 )
 
@@ -271,3 +278,65 @@ def defender_plans(
 
 def _number(value: float | None) -> str:
     return "" if value is None else f"{value:g}"
+
+
+@azure_app.command("parse-id")
+def parse_id(
+    ids: Annotated[
+        list[str] | None,
+        typer.Argument(
+            metavar="[RESOURCE_ID]...",
+            help="Resource ids: several arguments, or - to read stdin.",
+            show_default=False,
+        ),
+    ] = None,
+    from_file: FromFileOption = None,
+    column: ColumnOption = None,
+    sheet: SheetOption = None,
+    sort: SortOption = None,
+    unique: UniqueOption = None,
+    output: OutputOption = Output.TABLE,
+) -> None:
+    """Split Azure resource ids into their parts: subscription, resource group, name, type.
+
+    Works offline: nothing is looked up, so the resource need not exist. -o json gives the
+    keys Terraform's provider::azurerm::parse_resource_id does (resource_group_name,
+    resource_name, full_resource_type, parent_resources, resource_scope and the rest), plus
+    id and management_group_name. SCOPE is what an extension resource (a lock, a role
+    assignment) is on. Exits 1 when any id cannot be read, after showing the rest.
+    """
+    wanted = names(ids, from_file, column, sheet)
+    parsed: list[ResourceId] = []
+    failed: list[InputError] = []
+    for text in wanted:
+        try:
+            parsed.append(parse_resource_id(text))
+        except InputError as exc:
+            if len(wanted) == 1:
+                raise
+            failed.append(exc)
+    render.emit(
+        output,
+        ["NAME", "TYPE", "RESOURCE GROUP", "SUBSCRIPTION", "PARENTS", "SCOPE"],
+        [_id_row(item) for item in parsed],
+        [item.as_dict() for item in parsed],
+    )
+    for problem in failed:
+        render.warn(str(problem))
+    if failed:
+        raise InputError(
+            f"{len(failed)} of {len(wanted)} id(s) are not Azure resource ids",
+            hint=failed[0].hint,
+        )
+
+
+def _id_row(item: ResourceId) -> list[render.Cell]:
+    parents = zip(item.types[:-1], item.names[:-1], strict=True)
+    return [
+        item.name,
+        item.type,
+        item.resource_group,
+        item.subscription,
+        ", ".join(f"{kind}/{name}" for kind, name in parents),
+        item.parent.id if item.parent is not None else "",
+    ]

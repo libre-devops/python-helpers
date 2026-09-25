@@ -52,6 +52,10 @@ def test_profile_ids_are_normalised_and_kind_follows_subscription():
         (config(auth="password"), "auth must be one of"),
         (config(auth="client-secret"), "needs a client_id"),
         (config(workspace_id="law-prd"), "must be a GUID"),
+        (config(workspace_id=f"/subscriptions/{SUBSCRIPTION}/x"), "that is its resource id"),
+        (config(workspace="law-soc", workspace_id=TENANT), "not both"),
+        (config(workspace="/subscriptions/x"), "workspace: not an Azure resource id"),
+        (config(workspace="a b"), "workspace: not a Log Analytics workspace"),
         ({"microsoft": {"profiles": {"Prod": {"tenant_id": TENANT}}}}, "lowercase"),
         ({"microsoft": {"profiles": {}}}, "at least one"),
         ({"ca_bundle": "x"}, r"no \[microsoft\] section"),
@@ -71,6 +75,25 @@ def test_cloud_auth_and_workspace_are_read():
     assert prod.cloud.name == "usgov"
     assert prod.cloud.graph_url == "https://graph.microsoft.us"
     assert (prod.auth, prod.client_id, prod.workspace_id) == ("client-secret", CLIENT_ID, TENANT)
+
+
+@pytest.mark.parametrize(
+    ("given", "kept"),
+    [
+        ("law-soc", "law-soc"),
+        (TENANT.upper(), TENANT),
+        (
+            f"subscriptions/{SUBSCRIPTION}/resourceGroups/rg-soc"
+            "/providers/Microsoft.OperationalInsights/workspaces/law-soc",
+            f"/subscriptions/{SUBSCRIPTION}/resourceGroups/rg-soc"
+            "/providers/Microsoft.OperationalInsights/workspaces/law-soc",
+        ),
+    ],
+    ids=["name", "workspace-id", "resource-id"],
+)
+def test_workspace_takes_any_of_its_names(given, kept):
+    prod = parse(config(workspace=given)).get("prod")
+    assert (prod.workspace, prod.workspace_id) == (kept, None)
 
 
 def test_defaults_are_the_public_cloud_and_the_azure_cli():

@@ -64,12 +64,24 @@ def test_someone_elses_azure_roles_are_searched_per_scope_and_deduplicated():
     assert urlsplit(adapter.requests[1].url).path.startswith(other)
 
 
+def test_a_management_group_is_a_scope_to_search():
+    client, adapter = azure(lambda request: (200, {"value": []}))
+    group = "/providers/Microsoft.Management/managementGroups/mg-corp"
+    client.eligible(principal_id=ME, scopes=[group.lstrip("/")])
+    assert urlsplit(adapter.requests[0].url).path.startswith(f"{group}/providers/")
+
+
 def test_a_named_principal_needs_a_real_id_and_a_scope():
     client, adapter = azure(lambda request: (200, {"value": []}))
     with pytest.raises(LdoError, match="not an object id"):
         client.eligible(principal_id="ana@example.com", scopes=[SCOPE])
     with pytest.raises(LdoError, match="not an Azure scope"):
         client.eligible(principal_id=ME, scopes=["../../evil"])
+    with pytest.raises(LdoError, match="not an Azure scope"):
+        client.eligible(principal_id=ME, scopes=[f"{SCOPE}/resourceGroups/../x"])
+    tenant_wide = "/providers/Microsoft.Web/sites/app1"
+    with pytest.raises(LdoError, match="not an Azure scope"):
+        client.eligible(principal_id=ME, scopes=[tenant_wide])
     with pytest.raises(LdoError, match="at least one scope"):
         client.eligible(principal_id=ME)
     assert adapter.requests == []

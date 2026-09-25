@@ -11,7 +11,7 @@ from libre_devops_helpers.microsoft.xdr import (
     read_timeline,
     timeline_query,
 )
-from libre_devops_helpers.microsoft.xdr.timeline import KINDS, MAX_EVENTS, RETENTION
+from libre_devops_helpers.microsoft.xdr.timeline import DEVICE_KINDS, KINDS, MAX_EVENTS, RETENTION
 
 BST = timezone(timedelta(hours=1))
 MORNING = Window(datetime(2026, 9, 24, 9, tzinfo=BST), datetime(2026, 9, 24, 12, tzinfo=BST), "x")
@@ -93,6 +93,15 @@ def test_kinds_are_named_by_comma_or_repeat_in_their_own_order():
     with pytest.raises(InputError, match="unknown kind of event: usb, wmi") as caught:
         parse_kinds(["usb,wmi,process"])
     assert "image-load" in (caught.value.hint or "")
+
+
+def test_the_endpoint_apis_kinds_are_the_device_tables_only():
+    assert parse_kinds([], device_tables_only=True) == DEVICE_KINDS
+    assert "alert" not in DEVICE_KINDS
+    assert parse_kinds(["logon"], device_tables_only=True) == ("logon",)
+    with pytest.raises(InputError, match="not in the Defender for Endpoint API's tables") as caught:
+        parse_kinds(["alert,process"], device_tables_only=True)
+    assert "--endpoint" in (caught.value.hint or "")
 
 
 def row(when: str, kind: str = "process", device: str = "web01", device_id: str = "d1") -> dict:

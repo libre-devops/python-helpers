@@ -93,6 +93,25 @@ def test_a_timeline_through_the_endpoint_writes_utc_in_json(config_file):
     assert (event["type"], event["device_id"], event["id"]) == ("network", "d1", "42")
 
 
+def test_a_timeline_through_the_endpoint_leaves_alerts_out_and_says_so(config_file):
+    seen = []
+
+    def hunting(request):
+        seen.append(json_body(request)["Query"])
+        return (200, {"Schema": [], "Results": []})
+
+    handler = routes({"/api/advancedqueries/run": hunting})
+    result = run(config_file, handler, ["xdr", "timeline", "web01", "--endpoint"])
+    assert result.exit_code == 0, result.output
+    assert "DeviceProcessEvents" in seen[0]
+    assert "AlertEvidence" not in seen[0]
+    assert "alerts are left out" in result.stderr
+    refused = run(
+        config_file, routes({}), ["xdr", "timeline", "web01", "--type", "alert", "--endpoint"]
+    )
+    assert "not in the Defender for Endpoint API's tables" in str(refused.exception)
+
+
 def test_a_timeline_warns_when_it_stops_short_or_two_devices_share_the_name(config_file):
     reply = timeline_rows("2026-09-24T08:00:05Z", "2026-09-24T07:00:05Z")
     reply["results"][1]["DeviceId"] = "d2"

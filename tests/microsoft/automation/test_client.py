@@ -54,6 +54,25 @@ def test_names_that_could_reach_another_resource_are_refused(ref):
         client(FakeAutomation()).find_account(ref, SUBSCRIPTIONS)
 
 
+@pytest.mark.parametrize(
+    ("ref", "message"),
+    [
+        (
+            ACCOUNT_ID.replace("Microsoft.Automation/automationAccounts", "Microsoft.Web/sites"),
+            "it is the resource id of a Microsoft.Web/sites",
+        ),
+        (f"/subscriptions/{SUBSCRIPTION}/resourceGroups/rg/x", "expected providers/NAMESPACE"),
+        (ACCOUNT_ID.replace("aa-ops", "aa..ops"), "not an Automation account name"),
+    ],
+    ids=["another-type", "not-an-id", "bad-name"],
+)
+def test_a_resource_id_that_is_not_an_accounts_is_refused_before_any_request(ref, message):
+    fake = FakeAutomation()
+    with pytest.raises(InputError) as caught:
+        client(fake).find_account(ref, SUBSCRIPTIONS)
+    assert message in f"{caught.value} {caught.value.hint}"
+
+
 def test_jobs_are_every_page_newest_first():
     automation = client(FakeAutomation())
     jobs = automation.jobs(automation.find_account("aa-ops", SUBSCRIPTIONS))

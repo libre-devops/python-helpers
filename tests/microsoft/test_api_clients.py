@@ -37,3 +37,20 @@ def test_a_resource_manager_client_asks_for_tokens_with_the_trailing_slash():
     assert tokens.calls == [("https://management.azure.com/", TENANT)]
     assert client.api.name == "Azure Resource Manager"
     client.close()
+
+
+@pytest.mark.parametrize(
+    ("code", "hint"),
+    [
+        ("Authentication_RequestFromNonPremiumTenantOrB2CTenant", "Entra ID P1 or P2 licence"),
+        ("Authentication_RequestFromUnsupportedUserRole", "Reports Reader, Security Reader"),
+        ("Forbidden", "lacks the permission this call needs"),
+    ],
+    ids=["licence", "role", "other"],
+)
+def test_graphs_licence_and_role_refusals_say_which_they_are(code, hint):
+    session, _ = fake_session(lambda request: (403, {"error": {"code": code, "message": "no"}}))
+    client = Directory.create(StaticTokens(), TENANT, session=session)
+    with pytest.raises(ApiError) as caught:
+        client.api.get("/v1.0/auditLogs/signIns")
+    assert hint in (caught.value.hint or "")

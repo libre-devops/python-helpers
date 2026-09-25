@@ -29,6 +29,7 @@ from libre_devops_helpers.core.probe import Probe
 RECORD = Path(__file__).with_name("json_output.json")
 RECORDING = os.environ.get("LDO_RECORD_JSON_OUTPUT") == "1"
 TOKEN = make_jwt(graph_claims())
+_GROUP = f"/subscriptions/{SUBSCRIPTION}/resourceGroups/rg-net"
 
 # Each command, with the arguments that make it write every part of its output.
 COMMANDS: dict[str, list[str]] = {
@@ -37,6 +38,7 @@ COMMANDS: dict[str, list[str]] = {
     "azure automation jobs": ["azure", "automation", "jobs", "aa-ops"],
     "azure automation logs": ["azure", "automation", "logs", "aa-ops", "job-3"],
     "azure defender-plans": ["azure", "defender-plans"],
+    "azure parse-id": ["azure", "parse-id", "{subnet}", "{subnet}{lock}", "{policy}"],
     "azure rbac": ["azure", "rbac", "ana@example.com"],
     "azure recommendations": ["azure", "recommendations"],
     "azure resource-graph": ["azure", "resource-graph", "resources | take 1"],
@@ -140,8 +142,14 @@ def _merge(shapes: list[Any]) -> Any:
     if all(isinstance(item, list) for item in shapes):
         items = [item[0] for item in shapes if item]
         return [_merge(items)] if items else []
-    kinds = sorted({json.dumps(item, sort_keys=True) for item in shapes})
-    return json.loads(kinds[0]) if len(kinds) == 1 else " | ".join(kinds)
+    kinds: set[str] = set()
+    for item in shapes:
+        # A kind is a word ("string"), kinds already merged are words joined by " | ", and
+        # an object or a list among them is written as JSON.
+        kinds.update(item.split(" | ") if isinstance(item, str) else [json.dumps(item)])
+    if len(kinds) == 1 and all(isinstance(item, str) for item in shapes):
+        return kinds.pop()
+    return " | ".join(sorted(kinds))
 
 
 @pytest.fixture
@@ -177,6 +185,10 @@ def _workflow_files(folder: Path) -> dict[str, object]:
         "workflows": tiers,
         "out": folder / "exported",
         "subscription": SUBSCRIPTION,
+        "subnet": f"{_GROUP}/providers/Microsoft.Network/virtualNetworks/vnet1/subnets/snet-app",
+        "lock": "/providers/Microsoft.Authorization/locks/no-delete",
+        "policy": "/providers/Microsoft.Management/managementGroups/mg-corp"
+        "/providers/Microsoft.Authorization/policyAssignments/pa-tags",
     }
 
 

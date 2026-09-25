@@ -99,6 +99,9 @@ KINDS: dict[str, _Kind | None] = {
     ),
     "alert": None,
 }
+# The kinds Defender for Endpoint's hunting API can give: it reads the device tables only,
+# not AlertEvidence and AlertInfo, which are Defender XDR's and come through Graph.
+DEVICE_KINDS = tuple(kind for kind, shape in KINDS.items() if shape is not None)
 
 
 @dataclass(frozen=True)
@@ -156,16 +159,24 @@ class Timeline:
         )
 
 
-def parse_kinds(values: Iterable[str]) -> tuple[str, ...]:
+def parse_kinds(values: Iterable[str], *, device_tables_only: bool = False) -> tuple[str, ...]:
     """The kinds of event named, in ``KINDS`` order ("process,network", or repeated); all
-    of them when none are named."""
+    of them when none are named. ``device_tables_only`` is for Defender for Endpoint's
+    hunting API, which has no alert tables: every kind but alerts, and an InputError when
+    alerts are named."""
     named = {value.casefold() for value in split_names(values)}
     unknown = sorted(named - set(KINDS))
     if unknown:
         raise InputError(
             f"unknown kind of event: {', '.join(unknown)}", hint=f"use {', '.join(KINDS)}"
         )
-    return tuple(kind for kind in KINDS if not named or kind in named)
+    known = DEVICE_KINDS if device_tables_only else tuple(KINDS)
+    if device_tables_only and "alert" in named:
+        raise InputError(
+            "alerts are not in the Defender for Endpoint API's tables, only device events are",
+            hint="ask Graph's hunting API for alerts (leave out --endpoint), or leave alert out",
+        )
+    return tuple(kind for kind in known if not named or kind in named)
 
 
 def timeline_query(

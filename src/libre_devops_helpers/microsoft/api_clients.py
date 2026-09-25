@@ -16,6 +16,20 @@ from libre_devops_helpers.core.http import ApiClient, ServiceClient
 from libre_devops_helpers.microsoft.clouds import PUBLIC
 from libre_devops_helpers.microsoft.config import Profile
 
+# Graph error codes that say more than the HTTP status does: a 403 is as often a missing
+# licence or role as a missing scope.
+GRAPH_ERROR_HINTS = {
+    "Authentication_RequestFromNonPremiumTenantOrB2CTenant": (
+        "this needs a Microsoft Entra ID P1 or P2 licence in the tenant, which it does not "
+        "have (or it is a B2C tenant), whatever the token's scopes"
+    ),
+    "Authentication_RequestFromUnsupportedUserRole": (
+        "this is limited to some Entra roles (such as Reports Reader, Security Reader or "
+        "Global Reader), and the signed-in user has none of them active: activate one with "
+        "PIM if it is eligible"
+    ),
+}
+
 
 class GraphServiceClient(ServiceClient):
     """A client that reads Microsoft Graph, in one tenant."""
@@ -39,6 +53,7 @@ class GraphServiceClient(ServiceClient):
             name=cls.API_NAME,
             verify=verify,
             session=session,
+            error_hints=GRAPH_ERROR_HINTS,
         )
         return cls(api)
 

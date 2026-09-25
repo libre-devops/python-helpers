@@ -70,6 +70,22 @@
       "subscriptionId": "string"
     }
   ],
+  "azure parse-id": [
+    {
+      "full_resource_type": "string",
+      "id": "string",
+      "management_group_name": "null | string",
+      "parent_resources": {
+        "virtualNetworks": "string"
+      },
+      "resource_group_name": "null | string",
+      "resource_name": "string",
+      "resource_provider": "string",
+      "resource_scope": "null | string",
+      "resource_type": "string",
+      "subscription_id": "null | string"
+    }
+  ],
   "azure rbac": [
     {
       "id": "string",

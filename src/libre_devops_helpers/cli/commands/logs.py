@@ -18,6 +18,7 @@ from libre_devops_helpers.cli.options import (
     read_query,
 )
 from libre_devops_helpers.cli.render import Output
+from libre_devops_helpers.cli.runtime import MicrosoftRuntime
 from libre_devops_helpers.core.errors import ConfigError
 from libre_devops_helpers.core.util import format_duration, format_span
 from libre_devops_helpers.microsoft.config import Profile
@@ -29,6 +30,7 @@ from libre_devops_helpers.microsoft.loganalytics import (
     ingestion_query,
     read_ingestion,
 )
+from libre_devops_helpers.microsoft.workspaces import workspace_ref
 
 logs_app = typer.Typer(
     rich_markup_mode="markdown",
@@ -41,7 +43,10 @@ WorkspaceOption = Annotated[
     typer.Option(
         "--workspace",
         "-w",
-        help="Workspace ID (a GUID). Default: the profile's workspace_id.",
+        help="The workspace: its Workspace ID (the GUID on its Overview page), its resource "
+        "id (/subscriptions/.../workspaces/NAME), or its name. A resource id or a name is "
+        "looked up in Resource Manager, which needs Reader on it. Default: the profile's "
+        "workspace.",
         show_default=False,
     ),
 ]
@@ -79,7 +84,8 @@ def query(
     window = duration(timespan)
     runtime = get_runtime(ctx).microsoft
     selected = runtime.profile(profile)
-    result = runtime.logs(selected).query(_workspace(workspace, selected), kql, timespan=window)
+    workspace_id = _workspace(workspace, runtime, selected)
+    result = runtime.logs(selected).query(workspace_id, kql, timespan=window)
     render.query_result(result, output)
     render.note(f"{len(result.rows)} row(s)")
 
@@ -110,7 +116,7 @@ def ingestion(
     after = duration(quiet_after) or DEFAULT_QUIET_AFTER
     runtime = get_runtime(ctx).microsoft
     selected = runtime.profile(profile)
-    workspace_id = _workspace(workspace, selected)
+    workspace_id = _workspace(workspace, runtime, selected)
     result = runtime.logs(selected).query(workspace_id, ingestion_query(span))
     now = datetime.now(UTC)
     tables = by_quietest(read_ingestion(result), now, after)
@@ -134,15 +140,24 @@ def ingestion(
         raise typer.Exit(ATTENTION)
 
 
-def _workspace(given: str | None, selected: Profile) -> str:
-    """The workspace to ask: --workspace, else the profile's workspace_id."""
-    workspace_id = given or selected.workspace_id
-    if not workspace_id:
+def _workspace(given: str | None, runtime: MicrosoftRuntime, selected: Profile) -> str:
+    """The Workspace ID to ask: --workspace's, else the profile's. A resource id or a name is
+    looked up, and what it named is noted, so it is plain which workspace was read."""
+    named = given or selected.workspace or selected.workspace_id
+    if not named:
         raise ConfigError(
             "no workspace given",
-            hint="pass --workspace, or set workspace_id on the profile",
+            hint="pass --workspace, or set workspace on the profile",
         )
-    return workspace_id
+    ref = workspace_ref(named)
+    if ref.kind == "workspace id":
+        return ref.value
+    found = runtime.azure(selected).workspace(ref)
+    render.note(
+        f"workspace {found.name} in {found.resource_group or '-'}, from its {ref.kind}: "
+        f"Workspace ID {found.workspace_id}"
+    )
+    return found.workspace_id
 
 
 def _ingestion_row(table: TableIngestion, now: datetime, after: timedelta) -> list[render.Cell]:
