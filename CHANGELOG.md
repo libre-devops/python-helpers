@@ -12,6 +12,38 @@ All notable changes to libre-devops-helpers are recorded here. The project follo
   the wheel and sdist to its package registry, both images (`linux/amd64`) to its container
   registry, and a GitLab release. The repository is mirrored there automatically, and its
   GitLab CI runs the same checks as GitHub's.
+- `--where "COLUMN=VALUE"` (or `!=`) on every command that reads names from a file: only the
+  rows of the CSV or workbook where another column holds that value, e.g.
+  `ldo devices watch -f plan.xlsx --column FQDN --where "Scheduled Date=today"`. Repeatable,
+  one column's values as alternatives. Dates can be `today`, `tomorrow`, `yesterday`,
+  `2026-09-25`, or UK or US (`25/09/2026`, `09/25/2026`), and spans of them
+  `2026-09-01..2026-09-14` (either end may be left open), `last 7d` and `next 7d`. A date
+  that could be UK or US is read as its span or its column shows, or refused.
+- `keyvault expiry` takes `-f FILE` with `--column`, `--sheet` and `--where`, as the device
+  commands do.
+
+### Changed
+
+- A date or time cell in a workbook reads as the day or time it shows (`2026-09-25`,
+  `09:00:00`), where it read as the number Excel keeps it as (`46290`).
+
+### Removed
+
+- `ldo keyvault expiry --all-vaults`. It sent a request to every vault in the tenant, and
+  each one you cannot read refuses and logs it, which Defender for Key Vault can take for
+  reconnaissance. Name the vaults you look after instead, as arguments or with
+  `-f vaults.txt`. `ldo self-test` no longer sweeps vaults either: it checks one with
+  `--vault NAME`.
+
+### Fixed
+
+- `ldo keyvault expiry` says when none of the vaults named could be read, and counts them
+  as "checked in 0 of 3 vault(s)", where it said "0 vault(s)" as if there were none.
+- A window you give shows as you gave it (`30d`, not `30d 00h`) in `keyvault expiry`,
+  `xdr stale`, `xdr alerts`, `entra app-credentials` and `entra sign-ins`.
+- `ldo self-test` explains a command that exited 1 by the warnings it wrote, with their
+  hints, not by its last line (often only its summary), and says how many cases it left
+  out for want of `--device`, `--user`, `--group` or `--workspace`.
 
 ## 0.5.1rc3
 

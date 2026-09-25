@@ -17,7 +17,7 @@ from libre_devops_helpers.cli.options import (
     get_runtime,
 )
 from libre_devops_helpers.cli.render import Output
-from libre_devops_helpers.core.util import format_duration
+from libre_devops_helpers.core.util import format_span
 from libre_devops_helpers.microsoft.entra import RoleAssignment
 
 
@@ -138,4 +138,4 @@ def sign_ins(
         [dict(event.raw) for event in events],
     )
     if output is Output.TABLE:
-        render.note(f"{len(events)} sign-in(s) in the last {format_duration(window)}")
+        render.note(f"{len(events)} sign-in(s) in the last {format_span(window)}")

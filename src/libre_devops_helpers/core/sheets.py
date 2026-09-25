@@ -2,9 +2,10 @@
 
 An Office Open XML workbook is a zip of XML parts: the workbook lists its sheets,
 relationship parts say which file holds each one, and most text lives once in a shared
-strings table that cells point into. Only cell values are read. Formulas are never
-evaluated (the value Excel saved with the file is used), and macros in an ``.xlsm`` are
-never touched.
+strings table that cells point into. Only cell values are read, and each cell's number
+format, so that a date reads as the date it shows (``2026-09-25``), not the number Excel
+keeps it as (see ``core.excel_dates``). Formulas are never evaluated (the value Excel saved
+with the file is used), and macros in an ``.xlsm`` are never touched.
 
 A workbook is untrusted input, so each part is streamed with a size cap (a zip can claim
 any size, and a small file can inflate to gigabytes) and a document type declaration is
@@ -26,6 +27,7 @@ from typing import IO, NamedTuple
 from xml.etree import ElementTree
 
 from libre_devops_helpers.core.errors import InputError
+from libre_devops_helpers.core.excel_dates import Kind, format_kind, from_serial
 
 SUFFIXES = frozenset({".xlsx", ".xlsm", ".xltx", ".xltm"})
 # Spreadsheet formats this module cannot read, and what to do instead.
@@ -60,6 +62,13 @@ class SheetRow(NamedTuple):
     hidden: bool
 
 
+class _Structure(NamedTuple):
+    sheets: list[Sheet]
+    strings_part: str | None
+    styles_part: str | None
+    date1904: bool
+
+
 @dataclass(frozen=True)
 class Sheet:
     """One worksheet: its tab name, whether the tab is hidden, and its part in the zip."""
@@ -76,8 +85,17 @@ class Workbook:
         self.path = path
         self._archive = _open_archive(path)
         try:
-            self.sheets, strings_part = self._read_structure()
-            self._strings = self._read_strings(strings_part) if strings_part else []
+            structure = self._read_structure()
+            self.sheets = structure.sheets
+            self._strings = (
+                self._read_strings(structure.strings_part) if structure.strings_part else []
+            )
+            # What each cell format shows (a cell's s attribute indexes them): a date, a
+            # time, both, or a plain number.
+            self._formats = (
+                self._read_formats(structure.styles_part) if structure.styles_part else []
+            )
+            self._date1904 = structure.date1904
         except BaseException:
             self._archive.close()
             raise
@@ -144,9 +162,27 @@ class Workbook:
             return "TRUE" if text == "1" else "FALSE"
         if kind == "e":
             return ""  # #N/A, #REF! and the like hold no value worth reading
+        if kind == "n" and text:
+            return self._as_date(cell, text)
         return text
 
-    def _read_structure(self) -> tuple[list[Sheet], str | None]:
+    def _as_date(self, cell: ElementTree.Element, text: str) -> str:
+        """A number as the date or time its format shows, else the number as it is."""
+        style = cell.get("s", "")
+        shown = (
+            self._formats[int(style)]
+            if style.isdigit() and int(style) < len(self._formats)
+            else None
+        )
+        if shown is None:
+            return text
+        try:
+            serial = float(text)
+        except ValueError:
+            return text
+        return from_serial(serial, shown, date1904=self._date1904) or text
+
+    def _read_structure(self) -> _Structure:
         if "_rels/.rels" not in self._archive.namelist():
             raise InputError(f"{self.path} is not an Excel workbook", hint=SAVE_AS_HINT)
         workbook_part = _target(self._relationships("_rels/.rels", ""), "officeDocument")
@@ -166,7 +202,14 @@ class Workbook:
                 sheets.append(Sheet(element.get("name", ""), hidden, part))
         if not sheets:
             raise InputError(f"{self.path} has no worksheets")
-        return sheets, _target(relationships, "sharedStrings")
+        properties = next(_elements(self._archive, workbook_part, self.path, "workbookPr"), None)
+        date1904 = properties is not None and properties.get("date1904") in {"1", "true"}
+        return _Structure(
+            sheets,
+            _target(relationships, "sharedStrings"),
+            _target(relationships, "styles"),
+            date1904,
+        )
 
     def _relationships(self, part: str, folder: str) -> dict[str, tuple[str, str]]:
         """Relationship id -> (type, part path), for the relationships part given."""
@@ -179,6 +222,24 @@ class Workbook:
             kind = element.get("Type", "").rsplit("/", 1)[-1]
             found[element.get("Id", "")] = (kind, posixpath.normpath(path))
         return found
+
+    def _read_formats(self, part: str) -> list[Kind | None]:
+        """What each cell format in the styles part shows, in order; none when the part is
+        missing, since without it every number is only a number."""
+        if part not in self._archive.namelist():
+            return []
+        codes: dict[int, str] = {}
+        ids: list[int] = []
+        for sheet in _elements(self._archive, part, self.path, "styleSheet"):
+            for child in sheet:
+                items = [item for item in child if _local(item.tag) in {"numFmt", "xf"}]
+                if _local(child.tag) == "numFmts":
+                    codes = {
+                        _number(item.get("numFmtId")): item.get("formatCode", "") for item in items
+                    }
+                elif _local(child.tag) == "cellXfs":
+                    ids = [_number(item.get("numFmtId")) for item in items]
+        return [format_kind(format_id, codes.get(format_id)) for format_id in ids]
 
     def _read_strings(self, part: str) -> list[str]:
         strings = []
@@ -325,6 +386,14 @@ def _rich_text(element: ElementTree.Element) -> str:
         elif tag == "r":
             parts.extend(t.text or "" for t in child if _local(t.tag) == "t")
     return "".join(parts)
+
+
+def _number(value: str | None) -> int:
+    """An id attribute as a number; a missing or odd one is 0, the General format."""
+    try:
+        return int(value or 0)
+    except ValueError:
+        return 0
 
 
 def _child(element: ElementTree.Element, name: str) -> ElementTree.Element | None:

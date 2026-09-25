@@ -2,7 +2,7 @@ import json
 
 from fakes.clock import FakeClock
 from fakes.tenant import invoke
-from fakes.workbooks import write_workbook
+from fakes.workbooks import Styled, write_workbook
 from libre_devops_helpers.core.errors import InputError
 
 
@@ -69,6 +69,33 @@ def test_devices_watch_waits_on_the_fake_clock_until_complete(config_file, tenan
     assert clock.sleeps == [300, 300]
     assert "pass 1: 1/2 complete" in result.stderr
     assert "every device meets every expectation after 3 pass(es)" in result.stderr
+
+
+def test_devices_watch_takes_the_days_servers_from_a_workbook(config_file, tenant, tmp_path):
+    plan = write_workbook(
+        tmp_path / "plan.xlsx",
+        {
+            "Plan": [
+                ["Server", "Scheduled Date", "Status"],
+                ["web01", Styled(46290, "dd/mm/yyyy"), ""],
+                ["web02", Styled(46291, "dd/mm/yyyy"), ""],
+                ["db01", Styled(46290, "dd/mm/yyyy"), "Done"],
+            ]
+        },
+    )
+    args = ["devices", "watch", "-f", str(plan), "--column", "Server"]
+    args += ["--where", "Scheduled Date=2026-09-25", "--where", "Status!=Done", "--max-passes", "1"]
+    result = invoke(config_file, tenant, args, clock=FakeClock())
+    assert result.exit_code == 0, result.output
+    assert (
+        "1 name(s) from the rows where Scheduled Date=2026-09-25 and Status!=Done" in result.stderr
+    )
+    looked_up = {
+        r.url for r in tenant.requests if "/v1.0/devices" in r.url or "/api/machines" in r.url
+    }
+    assert looked_up
+    assert all("web01" in url for url in looked_up)
+    assert "every device meets every expectation after 1 pass(es)" in result.stderr
 
 
 def test_devices_watch_exits_3_when_the_limit_is_reached(config_file, tenant):

@@ -69,7 +69,13 @@ uv pip install --python ~/.venvs/ldo/bin/python "git+https://github.com/libre-de
 ldo self-test --device web01.corp.example --user ana@example.com --group "MDE Pilot Devices" --report self-test.json
 ldo self-test --device web01.corp.example --only xdr --only devices    # one area
 ldo self-test --device web01.corp.example --all                        # the slow listings too
+ldo self-test --workspace law-soc --vault kv-app --only logs --only keyvault
 ```
+
+Each case that needs a name (`--device`, `--user`, `--group`, `--workspace`, `--vault`) runs
+only when it is given, and a note counts the ones left out. It reaches only what you name:
+give `--vault` a vault you can read. It never sweeps every vault, since each one you cannot
+read refuses and logs the request, which looks like reconnaissance.
 
 | Result | Means |
 | --- | --- |

@@ -53,4 +53,4 @@ def test_sign_ins_show_failures_and_count_them(config_file):
     result = run(config_file, handler, ["entra", "sign-ins", "--failures", "--since", "2h"])
     assert result.exit_code == 0, result.output
     assert "50126 Invalid password" in result.stdout
-    assert "1 sign-in(s) in the last 2h" in result.stderr
+    assert "1 sign-in(s) in the last 2h" in result.stderr.splitlines()

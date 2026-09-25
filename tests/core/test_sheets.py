@@ -2,7 +2,7 @@ import zipfile
 
 import pytest
 
-from fakes.workbooks import MAIN_NS, workbook_parts, write_workbook, write_zip
+from fakes.workbooks import MAIN_NS, Styled, workbook_parts, write_workbook, write_zip
 from libre_devops_helpers.core import sheets
 from libre_devops_helpers.core.errors import InputError
 from libre_devops_helpers.core.sheets import SheetRow, open_workbook
@@ -107,6 +107,38 @@ def test_a_workbook_without_shared_strings_still_reads(tmp_path):
         "sharedStrings", "styles"
     )
     assert cells(write_zip(tmp_path / "plan.xlsx", parts)) == [["1"], ["2"]]
+
+
+def test_dates_and_times_read_as_the_day_and_time_they_show(tmp_path):
+    rows = [
+        ["Server", "Scheduled Date", "Time", "Both", "Count", "Elapsed"],
+        [
+            "web01",
+            Styled(46290, "dd/mm/yyyy"),
+            Styled(0.375, 21),
+            Styled(46290.5, 22),
+            Styled(46290, 3),  # #,##0: a plain number
+            Styled(1.5, "[h]:mm"),
+        ],
+    ]
+    path = write_workbook(tmp_path / "plan.xlsx", {"Plan": rows})
+    assert cells(path)[1] == [
+        "web01",
+        "2026-09-25",
+        "09:00:00",
+        "2026-09-25T12:00:00",
+        "46290",
+        "1.5",
+    ]
+
+
+def test_a_1904_workbook_reads_its_dates_from_1904(tmp_path):
+    path = write_workbook(tmp_path / "plan.xlsx", {"Plan": [[Styled(46290, 14)]]}, date1904=True)
+    assert cells(path) == [["2030-09-26"]]
+
+
+def test_a_number_without_a_format_is_only_a_number(tmp_path):
+    assert cells(write_workbook(tmp_path / "plan.xlsx", {"Plan": [[46290]]})) == [["46290"]]
 
 
 def test_an_unknown_sheet_lists_the_sheets(tmp_path):

@@ -17,6 +17,7 @@ from libre_devops_helpers.cli.options import (
     SheetOption,
     SortOption,
     UniqueOption,
+    WhereOption,
     get_runtime,
     names,
 )
@@ -38,6 +39,7 @@ def devices(
     from_file: FromFileOption = None,
     column: ColumnOption = None,
     sheet: SheetOption = None,
+    where: WhereOption = None,
     group: Annotated[
         list[str] | None,
         typer.Option(
@@ -62,7 +64,7 @@ def devices(
     groups share is refused), and counts nested membership unless --direct. Exits 3 when
     a device is not in Entra, or not in every group.
     """
-    wanted = names(devices, from_file, column, sheet)
+    wanted = names(devices, from_file, column, sheet, where)
     runtime = get_runtime(ctx).microsoft
     selected = runtime.profile(profile)
     entra = runtime.entra(selected)

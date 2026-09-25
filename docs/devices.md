@@ -12,6 +12,7 @@ ldo devices check -f plan.xlsx --column FQDN --sheet "Ring 1" --tag linux-server
 ldo devices check -f hosts.txt --group "MDE Pilot Devices" --intune --compliant
 ldo devices check web01,web02 --device-group "Linux servers"   # a Defender device group
 ldo devices watch -f hosts.txt --interval 5m --timeout 2h
+ldo devices watch -f plan.xlsx --column FQDN --where "Scheduled Date=tomorrow" --group "Linux servers" --group "Linux pilot"
 ldo devices show web01.corp.example.com             # one device, and what looks wrong
 ldo devices av-signature web01,db01                 # Defender Antivirus versions
 ldo devices av-signature -f plan.xlsx --column FQDN --at-least 1.419.120.0
@@ -34,6 +35,11 @@ falls short, and `watch` 130 on Ctrl-C.
 | `--device-group NAME` | falls in this Defender device group (repeatable) |
 | `--group NAME_OR_ID` | a member of this Entra group, by display name or object id (repeatable) |
 | `--intune`, `--compliant` | enrolled in Intune, and compliant |
+
+A plan in a spreadsheet can say which day each server changes. `--where` keeps only that
+day's rows (`--where "Scheduled Date=today"`), and other columns can narrow it further; see
+[lists of names](configuration.md#options-every-command-takes). With two `--group`s, a device
+must be in both.
 
 ## show
 

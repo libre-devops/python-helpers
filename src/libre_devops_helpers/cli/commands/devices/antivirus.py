@@ -17,6 +17,7 @@ from libre_devops_helpers.cli.options import (
     ShowQueryOption,
     SortOption,
     UniqueOption,
+    WhereOption,
     get_runtime,
     names,
 )
@@ -40,6 +41,7 @@ def av_signature(
     from_file: FromFileOption = None,
     column: ColumnOption = None,
     sheet: SheetOption = None,
+    where: WhereOption = None,
     at_least: Annotated[
         str | None,
         typer.Option(
@@ -59,7 +61,7 @@ def av_signature(
     'xdr hunt' (or --endpoint). UP TO DATE is Defender's own definitions check. Exits 3
     when a device is not found, is out of date, or is older than --at-least.
     """
-    wanted = names(devices, from_file, column, sheet)
+    wanted = names(devices, from_file, column, sheet, where)
     if at_least:
         version_key(at_least)  # a bad version fails before the query runs
     query = av_query(wanted)

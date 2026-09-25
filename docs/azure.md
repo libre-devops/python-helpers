@@ -66,11 +66,13 @@ account is enough to read them.
 
 ```bash
 ldo keyvault expiry kv-app-prd kv-app-dev --within 60d
-ldo keyvault expiry --all-vaults --kind certificate     # every vault, found through Resource Graph
+ldo keyvault expiry -f vaults.txt --kind certificate    # the vaults you look after, one a line
 ```
 
 Metadata only: it never reads a secret's value. Exits 3 when anything expires within the
-window.
+window. Name the vaults you look after: it has no way to search every vault, on purpose. A
+request to each vault you cannot read is refused and logged in that vault, and Defender for
+Key Vault can take many of those from one person for reconnaissance.
 
 ## Log Analytics
 

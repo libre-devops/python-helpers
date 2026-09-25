@@ -16,7 +16,7 @@ from libre_devops_helpers.cli.options import (
 )
 from libre_devops_helpers.cli.render import Output
 from libre_devops_helpers.core.errors import LdoError, NotFoundError
-from libre_devops_helpers.core.util import format_duration
+from libre_devops_helpers.core.util import format_span
 from libre_devops_helpers.microsoft.xdr import parse_severity
 
 
@@ -86,7 +86,7 @@ def alerts(
         ],
         [dict(alert.raw) for alert in found],
     )
-    render.note(f"{len(found)} alert(s) in the last {format_duration(window)}")
+    render.note(f"{len(found)} alert(s) in the last {format_span(window)}")
 
 
 def vulns(

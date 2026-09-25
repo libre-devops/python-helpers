@@ -1,6 +1,7 @@
 """Excel workbooks built by hand, laid out as Excel saves them."""
 
 import zipfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from xml.sax.saxutils import escape
@@ -13,7 +14,18 @@ STRICT_MAIN_NS = "http://purl.oclc.org/ooxml/spreadsheetml/main"
 
 STRICT_REL_NS = "http://purl.oclc.org/ooxml/officeDocument/relationships"
 
-Cell = str | int | float | bool | None
+
+@dataclass(frozen=True)
+class Styled:
+    """A number with a number format, as Excel keeps a date: ``Styled(46290, 14)`` is
+    25/09/2026 in built-in format 14, ``Styled(0.375, "hh:mm")`` 09:00 in a format of the
+    workbook's own."""
+
+    value: float
+    format: int | str
+
+
+Cell = str | int | float | bool | Styled | None
 
 
 def workbook_parts(
@@ -22,15 +34,19 @@ def workbook_parts(
     hidden_sheets: tuple[str, ...] = (),
     hidden_rows: dict[str, set[int]] | None = None,
     strict: bool = False,
+    date1904: bool = False,
 ) -> dict[str, str]:
     """The XML parts of a workbook laid out as Excel saves one, with shared strings.
 
     ``hidden_rows`` maps a sheet to the zero-based indexes of its hidden rows. Blank
-    cells (``None`` or ``""``) are left out of the XML, as Excel leaves them out.
+    cells (``None`` or ``""``) are left out of the XML, as Excel leaves them out. A
+    ``Styled`` cell gets a cell format in a styles part; ``date1904`` counts dates from 1904.
     """
     main, rel = (STRICT_MAIN_NS, STRICT_REL_NS) if strict else (MAIN_NS, REL_NS)
     package_rel = "http://schemas.openxmlformats.org/package/2006/relationships"
     strings: list[str] = []
+    # Cell format 0 is General, as in every workbook; each distinct Styled format follows.
+    formats: list[int | str] = []
     parts: dict[str, str] = {}
     entries, links = [], []
     for number, (name, rows) in enumerate(sheets.items(), start=1):
@@ -48,7 +64,12 @@ def workbook_parts(
                 ref = f"{chr(ord('A') + column)}{row_index + 1}"
                 if value is None or value == "":
                     continue
-                if isinstance(value, bool):
+                if isinstance(value, Styled):
+                    if value.format not in formats:
+                        formats.append(value.format)
+                    style = formats.index(value.format) + 1
+                    cells.append(f'<c r="{ref}" s="{style}"><v>{value.value}</v></c>')
+                elif isinstance(value, bool):
                     cells.append(f'<c r="{ref}" t="b"><v>{int(value)}</v></c>')
                 elif isinstance(value, int | float):
                     cells.append(f'<c r="{ref}"><v>{value}</v></c>')
@@ -71,9 +92,16 @@ def workbook_parts(
         f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
         f'<sst xmlns="{main}" count="{len(strings)}">{items}</sst>'
     )
+    if formats:
+        links.append(
+            f'<Relationship Id="rId{len(sheets) + 2}" Type="{rel}/styles" Target="styles.xml"/>'
+        )
+        parts["xl/styles.xml"] = _styles(main, formats)
+    properties = '<workbookPr date1904="1"/>' if date1904 else ""
     parts["xl/workbook.xml"] = (
         f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
-        f'<workbook xmlns="{main}" xmlns:r="{rel}"><sheets>{"".join(entries)}</sheets></workbook>'
+        f'<workbook xmlns="{main}" xmlns:r="{rel}">{properties}'
+        f"<sheets>{''.join(entries)}</sheets></workbook>"
     )
     parts["xl/_rels/workbook.xml.rels"] = (
         f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
@@ -89,6 +117,25 @@ def workbook_parts(
         '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>'
     )
     return parts
+
+
+def _styles(main: str, formats: list[int | str]) -> str:
+    """A styles part: a numFmt for each format code, and a cell format for each format, after
+    General. The cellStyleXfs before them hold xf elements too, which a reader must not take
+    for cell formats, so there is one here."""
+    custom = [code for code in formats if isinstance(code, str)]
+    codes = "".join(
+        f'<numFmt numFmtId="{164 + i}" formatCode="{escape(code, {chr(34): "&quot;"})}"/>'
+        for i, code in enumerate(custom)
+    )
+    ids = [code if isinstance(code, int) else 164 + custom.index(code) for code in formats]
+    xfs = "".join(f'<xf numFmtId="{format_id}" applyNumberFormat="1"/>' for format_id in ids)
+    return (
+        f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+        f'<styleSheet xmlns="{main}"><numFmts count="{len(custom)}">{codes}</numFmts>'
+        '<cellStyleXfs count="1"><xf numFmtId="22"/></cellStyleXfs>'
+        f'<cellXfs count="{len(ids) + 1}"><xf numFmtId="0"/>{xfs}</cellXfs></styleSheet>'
+    )
 
 
 def write_zip(path: Path, parts: dict[str, str | bytes]) -> Path:

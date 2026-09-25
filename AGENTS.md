@@ -98,7 +98,8 @@ name in code: use `core/brand.py` (`brand.COMMAND`, `brand.env_var("X")`,
   (`note`, `warn`, `error`, `emit`). In the `json` and `otlp` log formats those become log
   records, so never write to stderr directly.
 - Every data command takes `-o table|json|csv|tsv` and `-p PROFILE`; lists of names take
-  arguments, `-` for stdin and `-f FILE` with `--column` and `--sheet`. A list command also
+  arguments, `-` for stdin and `-f FILE` with `--column`, `--sheet` and `--where`
+  (`core.row_filters`). A list command also
   takes `sort: SortOption = None, unique: UniqueOption = None` before `output`, which
   `render.emit` applies to its rows; a command showing one record does not.
 - Colour is decided once, in `core/colour.py` (the root's `--colour` flag, `NO_COLOR`,

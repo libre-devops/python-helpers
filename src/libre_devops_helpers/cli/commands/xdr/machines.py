@@ -16,12 +16,13 @@ from libre_devops_helpers.cli.options import (
     SheetOption,
     SortOption,
     UniqueOption,
+    WhereOption,
     duration,
     get_runtime,
     names,
 )
 from libre_devops_helpers.cli.render import Output
-from libre_devops_helpers.core.util import format_duration, short_name
+from libre_devops_helpers.core.util import format_span, short_name
 from libre_devops_helpers.microsoft.xdr import Machine, MachineLookup
 
 
@@ -37,6 +38,7 @@ def machines(
     from_file: FromFileOption = None,
     column: ColumnOption = None,
     sheet: SheetOption = None,
+    where: WhereOption = None,
     profile: ProfileOption = None,
     all_records: Annotated[
         bool, typer.Option("--all-records", help="Also list older duplicate Defender records.")
@@ -50,7 +52,7 @@ def machines(
     Each device is looked up by FQDN, then by short hostname. Exits 3 when any device
     has no Defender record.
     """
-    wanted = names(devices, from_file, column, sheet)
+    wanted = names(devices, from_file, column, sheet, where)
     runtime = get_runtime(ctx).microsoft
     selected = runtime.profile(profile)
     lookups = runtime.xdr(selected).find_machines(wanted)
@@ -165,6 +167,6 @@ def stale(
         ],
         [dict(machine.raw) for machine in found],
     )
-    render.note(f"{len(found)} machine(s) not seen for {format_duration(window)}")
+    render.note(f"{len(found)} machine(s) not seen for {format_span(window)}")
     if found:
         raise typer.Exit(ATTENTION)

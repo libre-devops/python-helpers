@@ -109,6 +109,55 @@ def test_names_fill_the_commands_and_cases_without_them_are_skipped(cases, monke
     assert seen == ["xdr machines app07", "entra app-credentials"]  # the short one, once
 
 
+def test_the_cases_left_out_for_want_of_a_name_are_counted_with_their_options(cases, monkeypatch):
+    monkeypatch.setattr(selftest, "_run", lambda *args: selftest.Outcome("x", "ok", 0, 0.0))
+    cases(
+        Case(("xdr", "machines", "{device}"), ("device",)),
+        Case(("logs", "ingestion", "-w", "{workspace}"), ("workspace",)),
+        Case(("entra", "user-groups", "{user}"), ("user",), slow=True),
+        Case(("azure", "subscriptions")),
+    )
+    result = runner.invoke(app, ["self-test"])
+    assert "2 more need --device, --workspace: give them to run those too" in result.stderr
+    result = runner.invoke(app, ["self-test", "--all", "--device", "web01", "--only", "entra"])
+    assert "1 more need --user" in result.stderr
+
+
+def test_a_command_that_exits_1_is_explained_by_its_warnings_not_its_summary():
+    output = (
+        "warning: cannot read vault kv-app: HTTP 403 Forbidden\n"
+        "hint: the resource's firewall does not allow this machine's IP address\n"
+        "warning: cannot read vault kv-ops: HTTP 403 Forbidden\n"
+        "hint: the resource's firewall does not allow this machine's IP address\n"
+        "0 item(s) expire within 30d (0 checked in 0 of 2 vault(s))\n"
+    )
+    said, hint = selftest._explanation(output)
+    assert said.splitlines() == [
+        "warning: cannot read vault kv-app: HTTP 403 Forbidden",
+        "warning: cannot read vault kv-ops: HTTP 403 Forbidden",
+    ]
+    assert hint == "the resource's firewall does not allow this machine's IP address"
+    assert selftest._explanation("3 row(s)\n") == ("3 row(s)", None)
+
+
+def test_several_warnings_are_one_row_in_the_table_and_each_in_the_details(cases, monkeypatch):
+    def run(args, stdin, config, profile):
+        detail = "warning: cannot read vault kv-app\nwarning: cannot read vault kv-ops"
+        return selftest.Outcome("keyvault expiry", "refused", 1, 0.1, detail, "check the firewall")
+
+    monkeypatch.setattr(selftest, "_run", run)
+    cases(Case(("keyvault", "expiry", "kv-app")))
+    result = runner.invoke(app, ["self-test"])
+    table, details = result.stdout.split("\n\n", 1)
+    assert "warning: cannot read vault kv-app (and 1 more)" in table
+    lines = [" ".join(line.split()) for line in details.splitlines()]
+    assert lines[1:] == [
+        "Said warning: cannot read vault kv-app",
+        "Said warning: cannot read vault kv-ops",
+        "Hint check the firewall",
+    ]
+
+
 def test_the_profile_is_given_to_every_command_and_put_back(cases, monkeypatch):
     seen = []
     real = pretty._documents
@@ -130,6 +179,13 @@ def test_the_profile_is_given_to_every_command_and_put_back(cases, monkeypatch):
     assert "LDO_PROFILE" not in os.environ
 
 
+def test_the_battery_reaches_only_what_it_is_given():
+    # A Key Vault sweep sends a request as the person to every vault in the tenant; each one
+    # they cannot read refuses and logs it, which looks like reconnaissance.
+    for case in selftest.CASES:
+        assert "--all-vaults" not in case.args, case.args
+
+
 def test_the_battery_is_read_only_and_every_command_in_it_exists():
     from typer.testing import CliRunner
 
@@ -137,9 +193,7 @@ def test_the_battery_is_read_only_and_every_command_in_it_exists():
     for case in selftest.CASES:
         line = " ".join(case.args)
         assert not any(line.startswith(write) for write in writes), line
-        filled = [
-            part.format(device="web01", short="web01", user="u", group="g", workspace="w", snow="")
-            for part in case.args
-        ]
+        names = {"device": "web01", "short": "web01", "user": "u", "group": "g", "snow": ""}
+        filled = [part.format(**names, workspace="w", vault="kv-app") for part in case.args]
         result = CliRunner().invoke(app, [*filled, "--help"])
         assert result.exit_code == 0, (line, result.output)

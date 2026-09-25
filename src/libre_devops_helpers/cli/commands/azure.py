@@ -15,6 +15,7 @@ from libre_devops_helpers.cli.options import (
     SheetOption,
     SortOption,
     UniqueOption,
+    WhereOption,
     get_runtime,
     names,
     read_query,
@@ -293,6 +294,7 @@ def parse_id(
     from_file: FromFileOption = None,
     column: ColumnOption = None,
     sheet: SheetOption = None,
+    where: WhereOption = None,
     sort: SortOption = None,
     unique: UniqueOption = None,
     output: OutputOption = Output.TABLE,
@@ -305,7 +307,7 @@ def parse_id(
     id and management_group_name. SCOPE is what an extension resource (a lock, a role
     assignment) is on. Exits 1 when any id cannot be read, after showing the rest.
     """
-    wanted = names(ids, from_file, column, sheet)
+    wanted = names(ids, from_file, column, sheet, where)
     parsed: list[ResourceId] = []
     failed: list[InputError] = []
     for text in wanted:

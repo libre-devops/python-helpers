@@ -5,7 +5,8 @@ Commands that take devices, users or vaults accept them however they are to hand
 separated by commas, spaces or new lines, with ``#`` comments. A CSV file (a ``.csv``
 suffix, or any file when a column is named) and an Excel workbook (``.xlsx``, ``.xlsm``,
 ``.xltx``, ``.xltm``) are read by column header, so a plan, an export from a portal or a
-spreadsheet someone emailed works as it is, title rows above the header and all.
+spreadsheet someone emailed works as it is, title rows above the header and all. Its rows
+can be filtered by other columns, today's changes only, say (``core.row_filters``).
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from typing import TextIO
 
 from libre_devops_helpers.core import sheets
 from libre_devops_helpers.core.errors import InputError
+from libre_devops_helpers.core.row_filters import Condition, examples, row_test
 from libre_devops_helpers.core.util import split_names
 
 log = logging.getLogger(__name__)
@@ -38,6 +40,7 @@ def read_names(
     from_file: Path | None = None,
     column: str | None = None,
     sheet: str | None = None,
+    where: Sequence[Condition] = (),
 ) -> list[str]:
     """Every name given, in order, with blanks and case-insensitive repeats dropped.
 
@@ -45,28 +48,40 @@ def read_names(
     header, case-insensitively) of a CSV or workbook ``from_file``, or of CSV on stdin
     when there is no file. ``sheet`` picks a workbook's sheet by tab name; without it,
     the one visible sheet with that column is used, or the first visible sheet when no
-    column is named.
+    column is named. ``where`` keeps only the rows of that table that meet every
+    condition; names given as ``values`` are kept as they are.
     """
     if sheet is not None and (from_file is None or not sheets.is_workbook(from_file)):
         raise InputError("--sheet applies to an Excel workbook only")
+    if where and not column:
+        raise InputError(
+            "--where filters the rows of a table, so it needs the column of names",
+            hint="name it with --column, e.g. --column FQDN",
+        )
+    if where and from_file is None and "-" not in values:
+        raise InputError("--where filters the rows of a file", hint="read the names with -f FILE")
     collected: list[str] = []
     for value in values:
         if value == "-":
             if stdin is None:
                 raise InputError("'-' reads names from stdin, but there is no stdin")
             text = stdin.read()
-            collected.extend(_from_csv(text, column, "stdin") if column else _from_text(text))
+            collected.extend(
+                _from_csv(text, column, "stdin", where) if column else _from_text(text)
+            )
         else:
             collected.extend(split_names([value]))
     if from_file is not None:
-        collected.extend(_from_file(from_file, column, sheet))
+        collected.extend(_from_file(from_file, column, sheet, where))
     return _dedupe(collected)
 
 
-def _from_file(path: Path, column: str | None, sheet: str | None) -> list[str]:
+def _from_file(
+    path: Path, column: str | None, sheet: str | None, where: Sequence[Condition]
+) -> list[str]:
     sheets.check_readable(path)
     if sheets.is_workbook(path):
-        return _from_workbook(path, column, sheet)
+        return _from_workbook(path, column, sheet, where)
     try:
         text = path.read_text(encoding="utf-8-sig")
     except UnicodeDecodeError:
@@ -76,7 +91,7 @@ def _from_file(path: Path, column: str | None, sheet: str | None) -> list[str]:
     except OSError as exc:
         raise InputError(f"cannot read {path}: {exc}") from None
     if column or path.suffix.lower() == ".csv":
-        return _from_csv(text, column, str(path))
+        return _from_csv(text, column, str(path), where)
     return _from_text(text)
 
 
@@ -94,14 +109,19 @@ def _dedupe(names: list[str]) -> list[str]:
     return kept
 
 
-def _from_csv(text: str, column: str | None, source: str) -> list[str]:
-    return _column(((cells, False) for cells in csv.reader(io.StringIO(text))), column, source)
+def _from_csv(
+    text: str, column: str | None, source: str, where: Sequence[Condition] = ()
+) -> list[str]:
+    rows = ((cells, False) for cells in csv.reader(io.StringIO(text)))
+    return _column(rows, column, source, where)
 
 
-def _from_workbook(path: Path, column: str | None, sheet: str | None) -> list[str]:
+def _from_workbook(
+    path: Path, column: str | None, sheet: str | None, where: Sequence[Condition]
+) -> list[str]:
     with sheets.open_workbook(path) as book:
         chosen = book.sheet(sheet) if sheet is not None else _pick_sheet(book, column)
-        return _column(book.rows(chosen), column, f"sheet {chosen.name!r} of {path}")
+        return _column(book.rows(chosen), column, f"sheet {chosen.name!r} of {path}", where)
 
 
 def _pick_sheet(book: sheets.Workbook, column: str | None) -> sheets.Sheet:
@@ -137,10 +157,15 @@ def _has_column(rows: Iterable[Row], column: str) -> bool:
     return True
 
 
-def _column(rows: Iterable[Row], column: str | None, source: str) -> list[str]:
-    """The non-blank values under the header ``column``, or under the only header."""
+def _column(
+    rows: Iterable[Row], column: str | None, source: str, where: Sequence[Condition] = ()
+) -> list[str]:
+    """The non-blank values under the header ``column``, or under the only header, from
+    the rows that meet every ``where`` condition."""
     remaining = iter(rows)
-    index = _header(remaining, column, source)
+    index, header = _header(remaining, column, source)
+    if where:
+        remaining = iter(_matching(list(remaining), header, source, where))
     values: list[str] = []
     hidden = 0
     for cells, row_hidden in remaining:
@@ -158,8 +183,25 @@ def _column(rows: Iterable[Row], column: str | None, source: str) -> list[str]:
     return values
 
 
-def _header(rows: Iterable[Row], column: str | None, source: str) -> int:
-    """Find the header row, consuming rows up to it, and return the column's index.
+def _matching(
+    rows: list[Row], header: Sequence[str], source: str, where: Sequence[Condition]
+) -> list[Row]:
+    """The rows that meet every condition; an error naming what the column holds when none
+    do, since a filter that matched nothing is more often a typo than an empty day."""
+    cells = [row[0] for row in rows]
+    test = row_test(where, header, cells, source)
+    kept = [row for row in rows if test(row[0])]
+    if not kept:
+        first = where[0]
+        raise InputError(
+            f"no rows of {source} match {' and '.join(repr(item.text) for item in where)}",
+            hint=f"{first.column} holds: {examples(cells, header, first.column)}",
+        )
+    return kept
+
+
+def _header(rows: Iterable[Row], column: str | None, source: str) -> tuple[int, list[str]]:
+    """Find the header row, consuming rows up to it: the column's index, and the header.
 
     Without ``column``, the header is the first non-blank row, and it must name one
     column only. With it, the header is the first of the first few non-blank rows to
@@ -173,14 +215,14 @@ def _header(rows: Iterable[Row], column: str | None, source: str) -> int:
         if wanted is None:
             named = [index for index, cell in enumerate(cells) if cell]
             if len(named) == 1:
-                return named[0]
+                return named[0], cells
             raise InputError(
                 f"{source} has several columns",
                 hint=f"pick one with --column ({', '.join(cell for cell in cells if cell)})",
             )
         for index, cell in enumerate(cells):
             if cell.casefold() == wanted:
-                return index
+                return index, cells
     if first is None:
         raise InputError(f"{source} has no header row")
     raise InputError(

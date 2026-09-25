@@ -18,6 +18,7 @@ from libre_devops_helpers.cli.options import (
     SheetOption,
     SortOption,
     UniqueOption,
+    WhereOption,
     duration,
     get_runtime,
     names,
@@ -94,6 +95,7 @@ def check(
     from_file: FromFileOption = None,
     column: ColumnOption = None,
     sheet: SheetOption = None,
+    where: WhereOption = None,
     entra: EntraOption = True,
     defender: DefenderOption = True,
     active: ActiveOption = False,
@@ -113,7 +115,7 @@ def check(
     By default each device must be in Entra and onboarded to Defender. Exits 3 when any
     device misses any expectation.
     """
-    wanted = names(devices, from_file, column, sheet)
+    wanted = names(devices, from_file, column, sheet, where)
     expectations = _expectations(
         entra, defender, active, tag, device_group, group, intune, compliant
     )
@@ -132,6 +134,7 @@ def watch_devices(
     from_file: FromFileOption = None,
     column: ColumnOption = None,
     sheet: SheetOption = None,
+    where: WhereOption = None,
     interval: Annotated[
         str, typer.Option("--interval", help="Time between passes, e.g. 90s, 5m, 1h.")
     ] = "5m",
@@ -166,7 +169,7 @@ def watch_devices(
     Progress goes to stderr after each pass; the final state goes to stdout. Exits 0
     when complete, 3 when a limit stopped it first, and 130 on Ctrl-C.
     """
-    wanted = names(devices, from_file, column, sheet)
+    wanted = names(devices, from_file, column, sheet, where)
     expectations = _expectations(
         entra, defender, active, tag, device_group, group, intune, compliant
     )

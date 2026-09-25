@@ -41,8 +41,8 @@ _JSON_SAMPLE = '{"value": [{"id": "1", "name": "web01", "on": true, "at": null}]
 
 @dataclass(frozen=True)
 class Case:
-    """One command to run: its arguments, with {device}, {short}, {user}, {group} and
-    {workspace} filled in, and what it needs to be worth running."""
+    """One command to run: its arguments, with {device}, {short}, {user}, {group},
+    {workspace} and {vault} filled in, and what it needs to be worth running."""
 
     args: tuple[str, ...]
     needs: tuple[str, ...] = ()
@@ -129,7 +129,9 @@ CASES = (
     Case(("azure", "defender-plans")),
     Case(("azure", "recommendations", "--severity", "high"), slow=True),
     Case(("azure", "automation", "accounts")),
-    Case(("keyvault", "expiry", "--all-vaults", "--within", "30d"), slow=True),
+    # Only a vault named: a request to every vault in the tenant, refused and logged by each
+    # one the person cannot read, looks like reconnaissance to Defender for Key Vault.
+    Case(("keyvault", "expiry", "{vault}", "--within", "30d"), ("vault",)),
     Case(("logs", "query", "Heartbeat | take 1", "--workspace", "{workspace}"), ("workspace",)),
     Case(("logs", "ingestion", "--workspace", "{workspace}"), ("workspace",)),
     Case(("pim", "eligible", "--azure")),
@@ -160,6 +162,10 @@ def self_test(
             "--workspace",
             help="A Log Analytics workspace: its Workspace ID, its resource id or its name.",
         ),
+    ] = None,
+    vault: Annotated[
+        str | None,
+        typer.Option("--vault", help="A Key Vault you can read, for keyvault expiry."),
     ] = None,
     snow: Annotated[
         bool, typer.Option("--snow", help="Also test the ServiceNow commands.")
@@ -195,6 +201,7 @@ def self_test(
         "user": user,
         "group": group,
         "workspace": workspace,
+        "vault": vault,
         "snow": "yes" if snow else None,
     }
     chosen = [
@@ -213,6 +220,9 @@ def self_test(
     )
     config_path = get_runtime(ctx).config_path
     render.note(f"running {len(runs)} commands; each one's output is discarded")
+    skipped, flags = _left_out(names, everything=everything, only=only)
+    if skipped:
+        render.note(f"{skipped} more need {', '.join(flags)}: give them to run those too")
     outcomes: list[Outcome] = []
     try:
         for number, (args, stdin) in enumerate(runs, 1):
@@ -267,7 +277,8 @@ def _run(args: list[str], stdin: str | None, config: Path | None, profile: str |
             return Outcome(command, "attention", code, seconds, "exit 3: a finding, as designed")
         if code == 2:
             return Outcome(command, "usage", code, seconds, _last_line(result.output))
-        return Outcome(command, "refused", code, seconds, _last_line(result.output))
+        said, hint = _explanation(result.output)
+        return Outcome(command, "refused", code, seconds, said, hint)
     if isinstance(error, LdoError):
         return Outcome(command, "refused", 1, seconds, str(error), error.hint)
     frames = traceback.extract_tb(error.__traceback__)
@@ -286,6 +297,47 @@ def _last_line(text: str) -> str:
     return lines[-1][:200] if lines else ""
 
 
+def _explanation(text: str) -> tuple[str, str | None]:
+    """Why a command that exited 1 without an error of ours stopped: every error and
+    warning it wrote, one a line, and their hints. Its last line alone is often only its
+    summary (a count of what it read), with the reason in a warning above it."""
+    lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
+    said = list(dict.fromkeys(line for line in lines if line.startswith(("error:", "warning:"))))
+    hints = list(dict.fromkeys(line[5:].strip() for line in lines if line.startswith("hint:")))
+    if not said:
+        return _last_line(text), None
+    return "\n".join(said), "\n".join(hints) or None
+
+
+# The option that gives each name a case can need.
+_NAME_OPTIONS = {
+    "device": "--device",
+    "short": "--device",
+    "user": "--user",
+    "group": "--group",
+    "workspace": "--workspace",
+    "vault": "--vault",
+    "snow": "--snow",
+}
+
+
+def _left_out(
+    names: dict[str, str | None], *, everything: bool, only: list[str] | None
+) -> tuple[int, list[str]]:
+    """How many cases were left out for want of a name, and the options that give them."""
+    skipped = 0
+    options: set[str] = set()
+    for case in CASES:
+        wanted = (everything or not case.slow) and (
+            not only or any(" ".join(case.args).startswith(prefix) for prefix in only)
+        )
+        missing = [need for need in case.needs if not names.get(need)]
+        if wanted and missing:
+            skipped += 1
+            options.update(_NAME_OPTIONS[need] for need in missing)
+    return skipped, sorted(options)
+
+
 def _show(outcomes: list[Outcome], output: Output) -> None:
     colours = {
         "ok": "green",
@@ -296,7 +348,8 @@ def _show(outcomes: list[Outcome], output: Output) -> None:
     }
     rows: list[list[render.Cell]] = []
     for item in outcomes:
-        detail = item.detail
+        first, *more = item.detail.splitlines() or [""]
+        detail = f"{first} (and {len(more)} more)" if more else first
         if item.where:
             detail += f" (at {item.where[-1]})"
         rows.append(
@@ -315,6 +368,7 @@ def _show_details(outcomes: list[Outcome]) -> None:
     for item in failed:
         render.echo()
         render.echo(render.title(f"{item.result}: {brand.COMMAND} {item.command}"))
-        lines = [("Said", item.detail), ("Hint", item.hint or "")]
+        lines = [("Said", said) for said in item.detail.splitlines() or [""]]
+        lines += [("Hint", hint) for hint in (item.hint or "").splitlines() or [""]]
         lines += [("At", where) for where in item.where]
         render.echo(render.pairs(lines))

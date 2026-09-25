@@ -21,7 +21,7 @@ def test_alerts_for_a_device_use_its_machine_and_filter_by_severity(config_file)
     result = run(config_file, handler, args)
     assert result.exit_code == 0, result.output
     assert "Suspicious process" in result.stdout
-    assert "1 alert(s) in the last 2d" in result.stderr
+    assert "1 alert(s) in the last 2d" in result.stderr.splitlines()
 
 
 def test_alerts_for_an_unknown_device_is_not_found(config_file):

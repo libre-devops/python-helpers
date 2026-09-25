@@ -8,19 +8,23 @@ import typer
 from libre_devops_helpers.cli import render
 from libre_devops_helpers.cli.exits import ATTENTION, ERROR
 from libre_devops_helpers.cli.options import (
+    ColumnOption,
+    FromFileOption,
     NamesArgument,
     OutputOption,
     ProfileOption,
+    SheetOption,
     SortOption,
     UniqueOption,
+    WhereOption,
     duration,
     get_runtime,
+    names,
 )
 from libre_devops_helpers.cli.render import Output
 from libre_devops_helpers.cli.runtime import MicrosoftRuntime
-from libre_devops_helpers.core.errors import ApiError, InputError
-from libre_devops_helpers.core.inputs import read_names
-from libre_devops_helpers.core.util import format_duration
+from libre_devops_helpers.core.errors import ApiError
+from libre_devops_helpers.core.util import format_span
 from libre_devops_helpers.microsoft.config import Profile
 from libre_devops_helpers.microsoft.keyvault import KINDS, ItemKind, VaultItem, expiring
 
@@ -28,12 +32,6 @@ keyvault_app = typer.Typer(
     rich_markup_mode="markdown",
     help="Key Vault: expiry of secrets, certificates and keys.",
     no_args_is_help=True,
-)
-
-# Every vault the credential can see, across subscriptions, in one query.
-_VAULTS_QUERY = (
-    "resources | where type =~ 'microsoft.keyvault/vaults' "
-    "| project name, subscriptionId, resourceGroup | order by name asc"
 )
 
 
@@ -46,12 +44,10 @@ def register(app: typer.Typer) -> None:
 def expiry(
     ctx: typer.Context,
     vaults: NamesArgument = None,
-    all_vaults: Annotated[
-        bool,
-        typer.Option(
-            "--all-vaults", help="Find every vault through Resource Graph and check each."
-        ),
-    ] = False,
+    from_file: FromFileOption = None,
+    column: ColumnOption = None,
+    sheet: SheetOption = None,
+    where: WhereOption = None,
     within: Annotated[
         str, typer.Option("--within", help="Show items expiring within this, e.g. 30d.")
     ] = "30d",
@@ -67,18 +63,20 @@ def expiry(
     unique: UniqueOption = None,
     output: OutputOption = Output.TABLE,
 ) -> None:
-    """List secrets, certificates and keys that expire soon, or already have.
+    """List secrets, certificates and keys that expire soon, or already have, in the vaults named.
 
-    Exits 3 when anything is expiring, so a scheduled job can alert; exits 1 when no
-    item is expiring but a vault could not be read.
+    Name the vaults you look after: it has no way to search every vault, since a request
+    to each one you cannot read is refused and logged, which Defender for Key Vault can
+    take for reconnaissance. Exits 3 when anything is expiring, so a scheduled job can
+    alert; exits 1 when no item is expiring but a vault could not be read.
     """
     window = duration(within) or timedelta(days=30)
     chosen = _kinds(kinds)
     runtime = get_runtime(ctx).microsoft
     selected = runtime.profile(profile)
-    names = _vault_names(runtime, selected, vaults, all_vaults)
+    named = names(vaults, from_file, column, sheet, where, what="vaults")
     now = datetime.now(UTC)
-    items, failed = _read_vaults(runtime, selected, names, chosen)
+    items, failed = _read_vaults(runtime, selected, named, chosen)
     shown = expiring(items, window, now=now, include_disabled=include_disabled)
     render.emit(
         output,
@@ -86,10 +84,13 @@ def expiry(
         [_row(item, now) for item in shown],
         [_record(item, now) for item in shown],
     )
+    read = len(named) - len(failed)
     render.note(
-        f"{len(shown)} item(s) expire within {format_duration(window)} "
-        f"({len(items)} checked in {len(names) - len(failed)} vault(s))"
+        f"{len(shown)} item(s) expire within {format_span(window)} "
+        f"({len(items)} checked in {read} of {len(named)} vault(s))"
     )
+    if failed and not read:
+        render.warn(f"none of the {len(named)} vault(s) could be read: see why above")
     if shown:
         raise typer.Exit(ATTENTION)
     if failed:
@@ -103,20 +104,6 @@ def _kinds(kinds: list[str] | None) -> list[ItemKind]:
         if kind not in known:
             raise typer.BadParameter(f"--kind must be one of {', '.join(KINDS)}")
     return [known[kind] for kind in kinds or KINDS]
-
-
-def _vault_names(
-    runtime: MicrosoftRuntime, selected: Profile, vaults: list[str] | None, all_vaults: bool
-) -> list[str]:
-    """The vaults named, and with --all-vaults every one Resource Graph finds, once each."""
-    names = read_names(vaults or [])
-    if all_vaults:
-        scope = [selected.subscription_id] if selected.subscription_id else []
-        found = runtime.azure(selected).resource_graph(_VAULTS_QUERY, subscriptions=scope)
-        names.extend(str(row.get("name")) for row in found.rows if row.get("name"))
-    if not names:
-        raise InputError("no vaults given", hint="name them, or pass --all-vaults")
-    return list(dict.fromkeys(names))
 
 
 def _read_vaults(

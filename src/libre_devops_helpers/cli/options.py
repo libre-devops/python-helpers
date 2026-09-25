@@ -14,6 +14,7 @@ from libre_devops_helpers.cli.runtime import Runtime
 from libre_devops_helpers.core import brand
 from libre_devops_helpers.core.errors import InputError, LdoError
 from libre_devops_helpers.core.inputs import read_names
+from libre_devops_helpers.core.row_filters import parse_conditions
 from libre_devops_helpers.core.timewindow import Window, choose_window
 from libre_devops_helpers.core.util import parse_duration
 from libre_devops_helpers.microsoft.config import load_config
@@ -51,13 +52,26 @@ def names(
     from_file: Path | None,
     column: str | None,
     sheet: str | None = None,
+    where: list[str] | None = None,
+    *,
+    what: str = "names",
 ) -> list[str]:
-    """Names from arguments, ``-`` for stdin, and ``--from-file``; at least one is needed."""
+    """Names from arguments, ``-`` for stdin, and ``--from-file``, from the rows ``--where``
+    keeps; at least one is needed. ``what`` says what they are, for the error without one."""
+    conditions = parse_conditions(where or [], today=datetime.now().date())
     found = read_names(
-        values or [], stdin=sys.stdin, from_file=from_file, column=column, sheet=sheet
+        values or [],
+        stdin=sys.stdin,
+        from_file=from_file,
+        column=column,
+        sheet=sheet,
+        where=conditions,
     )
     if not found:
-        raise InputError("no names given", hint="pass names, '-' for stdin, or --from-file")
+        raise InputError(f"no {what} given", hint=f"pass {what}, '-' for stdin, or --from-file")
+    if conditions:
+        kept = " and ".join(condition.text for condition in conditions)
+        render.note(f"{len(found)} {what.removesuffix('s')}(s) from the rows where {kept}")
     return found
 
 
@@ -166,6 +180,21 @@ SheetOption = Annotated[
         help=(
             "Workbook sheet (tab) to read. Default: the one visible sheet with --column, "
             "or the first visible sheet."
+        ),
+        show_default=False,
+    ),
+]
+
+WhereOption = Annotated[
+    list[str] | None,
+    typer.Option(
+        "--where",
+        help=(
+            'Only the rows of the file where COLUMN=VALUE, e.g. "Scheduled Date=tomorrow", '
+            "or COLUMN!=VALUE to leave rows out. Repeatable: values for one column are "
+            "alternatives, and every column must match. A date is today, tomorrow, "
+            "yesterday, 2026-09-25, or UK or US (25/09/2026, 09/25/2026); days are FROM..TO "
+            "(either end may be left open), last 7d or next 7d."
         ),
         show_default=False,
     ),

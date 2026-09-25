@@ -1,11 +1,13 @@
 import io
 import logging
+from datetime import date
 
 import pytest
 
-from fakes.workbooks import write_workbook
+from fakes.workbooks import Styled, write_workbook
 from libre_devops_helpers.core.errors import InputError
 from libre_devops_helpers.core.inputs import read_names
+from libre_devops_helpers.core.row_filters import parse_conditions
 
 
 def test_arguments_split_on_commas_and_spaces_and_drop_repeats():
@@ -171,3 +173,88 @@ def test_a_legacy_spreadsheet_gets_advice(tmp_path):
     with pytest.raises(InputError, match="old binary Excel format") as caught:
         read_names(from_file=path, column="FQDN")
     assert caught.value.hint == "save it as .xlsx or .csv"
+
+
+def where(*texts):
+    return parse_conditions(texts, today=date(2026, 9, 25))
+
+
+SCHEDULE = {
+    "Plan": [
+        ["Linux patching"],
+        ["Server", "FQDN", "Scheduled Date", "Status"],
+        ["web01", "web01.corp.example", Styled(46290, "dd/mm/yyyy"), ""],
+        ["web02", "web02.corp.example", Styled(46291, "dd/mm/yyyy"), ""],
+        ["db01", "db01.corp.example", Styled(46290, "dd/mm/yyyy"), "Done"],
+        ["app07", "app07.corp.example", Styled(46290, "dd/mm/yyyy"), ""],
+    ]
+}
+
+
+def test_a_workbooks_rows_are_filtered_by_their_dates_and_other_columns(tmp_path):
+    path = write_workbook(tmp_path / "plan.xlsx", SCHEDULE)
+    found = read_names(
+        from_file=path, column="FQDN", where=where("Scheduled Date=today", "Status!=Done")
+    )
+    assert found == ["web01.corp.example", "app07.corp.example"]
+    tomorrow = read_names(from_file=path, column="FQDN", where=where("scheduled date=26/09/2026"))
+    assert tomorrow == ["web02.corp.example"]
+
+
+def test_a_named_sheets_rows_are_the_ones_filtered(tmp_path):
+    rings = {
+        "Ring 1": [["FQDN", "Scheduled Date"], ["web01.corp.example", Styled(46290, 14)]],
+        "Ring 2": [
+            ["FQDN", "Scheduled Date"],
+            ["app07.corp.example", Styled(46290, 14)],
+            ["db01.corp.example", Styled(46297, 14)],
+        ],
+    }
+    path = write_workbook(tmp_path / "plan.xlsx", rings)
+    found = read_names(
+        from_file=path, column="FQDN", sheet="ring 2", where=where("Scheduled Date=last 7d")
+    )
+    assert found == ["app07.corp.example"]
+    whole = read_names(
+        from_file=path, column="FQDN", sheet="Ring 2", where=where("Scheduled Date=2026-09-01..")
+    )
+    assert whole == ["app07.corp.example", "db01.corp.example"]
+
+
+def test_a_csvs_rows_are_filtered_the_same_way_uk_dates_and_all(tmp_path):
+    path = tmp_path / "plan.csv"
+    path.write_text(
+        "Server,Scheduled Date\nweb01,25/09/2026\nweb02,26/09/2026\nweb03,01/10/2026\n",
+        encoding="utf-8",
+    )
+    assert read_names(
+        from_file=path, column="Server", where=where("Scheduled Date=2026-10-01")
+    ) == ["web03"]
+
+
+def test_names_given_as_arguments_are_kept_beside_the_filtered_rows(tmp_path):
+    path = write_workbook(tmp_path / "plan.xlsx", SCHEDULE)
+    found = read_names(["extra01"], from_file=path, column="Server", where=where("Status=Done"))
+    assert found == ["extra01", "db01"]
+
+
+def test_a_filter_that_matches_nothing_says_what_the_column_holds(tmp_path):
+    path = write_workbook(tmp_path / "plan.xlsx", SCHEDULE)
+    with pytest.raises(
+        InputError, match=r"no rows of sheet 'Plan' .* match 'Scheduled Date=2026-12-25'"
+    ) as caught:
+        read_names(from_file=path, column="FQDN", where=where("Scheduled Date=2026-12-25"))
+    assert caught.value.hint == "Scheduled Date holds: 2026-09-25, 2026-09-26"
+
+
+def test_where_needs_a_table_and_its_column(tmp_path):
+    path = write_workbook(tmp_path / "plan.xlsx", SCHEDULE)
+    with pytest.raises(InputError, match="needs the column of names"):
+        read_names(from_file=path, where=where("Status=Done"))
+    with pytest.raises(InputError, match="filters the rows of a file"):
+        read_names(["web01"], column="Server", where=where("Status=Done"))
+
+
+def test_where_filters_a_csv_on_stdin_too():
+    stdin = io.StringIO("Server,Status\nweb01,Done\nweb02,\n")
+    assert read_names(["-"], stdin=stdin, column="Server", where=where("Status!=Done")) == ["web02"]

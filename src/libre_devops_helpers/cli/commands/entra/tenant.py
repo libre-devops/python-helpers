@@ -16,7 +16,7 @@ from libre_devops_helpers.cli.options import (
     get_runtime,
 )
 from libre_devops_helpers.cli.render import Output
-from libre_devops_helpers.core.util import format_duration, is_guid
+from libre_devops_helpers.core.util import format_span, is_guid
 from libre_devops_helpers.microsoft.entra import (
     AppCredential,
     expiring,
@@ -86,7 +86,7 @@ def app_credentials(
     attention = [item for item in shown if item.ends is not None and item.ends - now <= window]
     if output is Output.TABLE:
         render.note(
-            f"{len(attention)} credential(s) end within {format_duration(window)} "
+            f"{len(attention)} credential(s) end within {format_span(window)} "
             f"(of {len(credentials)} checked)"
         )
     if attention:

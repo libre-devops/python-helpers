@@ -62,6 +62,30 @@ def test_tags_and_groups_with_group_members_fetched_once_per_pass():
     assert sum("transitiveMembers" in url for url in tenant.calls) == 1
 
 
+def test_a_device_expected_in_two_groups_must_be_in_both():
+    tenant = FakeTenant()
+    for name in ("web01", "web02", "web03"):
+        tenant.add(name)
+    tenant.group_members = ["web01", "web02"]
+    tenant.patched_members = ["web01", "web03"]
+    run = checker(tenant).check(
+        ["web01", "web02", "web03"], Expectations(groups=("Pilot", "Patched"))
+    )
+    assert statuses(run, "web01") == {
+        "entra": "met",
+        "defender": "met",
+        "group Pilot": "met",
+        "group Patched": "met",
+    }
+    assert (statuses(run, "web02")["group Patched"], statuses(run, "web03")["group Pilot"]) == (
+        "unmet",
+        "unmet",
+    )
+    assert not run.complete
+    # Each group's members are read once a pass, not once a device.
+    assert sum("transitiveMembers" in url for url in tenant.calls) == 2
+
+
 def test_results_keep_the_input_order_with_parallel_lookups():
     tenant = FakeTenant()
     names = [f"host{n:02d}" for n in range(20)]

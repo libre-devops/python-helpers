@@ -71,11 +71,38 @@ top-level `proxy`, `no_proxy` and `ca_bundle` apply to every call, and to the Az
 or `-f` with a file: one name per line, or a column of a CSV or Excel workbook (`.xlsx`,
 `.xlsm`, `.xltx`, `.xltm`) named by `--column`. The header may sit below title rows. In a
 workbook, `--sheet` picks the tab; without it, the one visible sheet with that column is used.
-Values are read as Excel saved them: no formulas are recalculated and no macros run.
+Values are read as Excel saved them: no formulas are recalculated and no macros run. A date
+cell reads as the day it shows, as `2026-09-25`, and a time as `09:00:00`.
+
+`--where "COLUMN=VALUE"` keeps only the rows where another column holds that value, and
+`COLUMN!=VALUE` leaves those rows out. Repeat it: values for one column are alternatives
+(`Environment=Dev` and `Environment=Test`), and every column named must match. Text is
+matched whatever its case. Without `--where`, every row is read.
+
+| Value | Rows whose cell holds |
+| --- | --- |
+| `today`, `tomorrow`, `yesterday` | that day |
+| `2026-09-25`, `25/09/2026` (UK), `09/25/2026` (US) | that day |
+| `2026-09-01..2026-09-14` | any day from the first to the last, both included |
+| `..2026-09-14`, `today..` | any day up to, or from, that one |
+| `last 7d`, `next 7d` | the seven days to today, or today and the six after |
+| nothing (`Scheduled Date!=`) | any value at all, so every row with a date |
+
+A day matches whether Excel keeps it as a date or as text written one of those ways, with or
+without a time. No other date formats are read.
+
+UK and US dates differ only when both numbers are 12 or under (`01/02/2026`), and this never
+guesses. A span says which it is written in when either end has a number over 12
+(`01/09/2026..14/09/2026` is UK), and a column says once one of its dates has; a date you give
+is read that way. If nothing settles it, or a column holds both, it stops and asks for
+`YYYY-MM-DD`. Dates that are real dates in Excel are never in doubt.
 
 ```bash
 ldo devices check web01,web02
 ldo devices check -f plan.xlsx --column FQDN --sheet "Ring 1"
+ldo devices watch -f plan.xlsx --column FQDN --where "Scheduled Date=today" --where "Status!=Done"
+ldo devices check -f plan.xlsx --column FQDN --sheet "Ring 2" --where "Scheduled Date=01/09/2026..14/09/2026"
+ldo devices check -f plan.xlsx --column FQDN --where "Scheduled Date=last 7d"
 cat hosts.txt | ldo xdr machines -
 ldo xdr vulns web01 --sort severity:desc --sort cvss:desc
 ldo xdr machines -f hosts.txt --sort "last seen:desc" --unique device -o csv > seen.csv

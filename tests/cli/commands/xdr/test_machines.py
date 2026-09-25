@@ -50,7 +50,7 @@ def test_stale_lists_silent_machines_and_exits_3(config_file):
     result = run(config_file, handler, ["xdr", "stale", "--older-than", "30d"])
     assert result.exit_code == 3, result.output
     assert "old01" in result.stdout
-    assert "1 machine(s) not seen for 30d" in result.stderr
+    assert "1 machine(s) not seen for 30d" in result.stderr.splitlines()
     quiet = run(config_file, routes({MACHINES: (200, {"value": []})}), ["xdr", "stale"])
     assert quiet.exit_code == 0
 

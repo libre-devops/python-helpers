@@ -106,7 +106,7 @@ ldo azure automation logs aa-ops --runbook Rotate-Keys    # the newest run's log
 ldo graph get-device web01
 ldo xdr alerts --since 24h --severity high
 ldo azure resource-graph "resources | summarize count() by type"
-ldo keyvault expiry --all-vaults --within 30d
+ldo keyvault expiry kv-app-prd --within 30d
 ```
 
 Incidents, Graph hunting and PIM for Entra roles need scopes the Azure CLI's token never

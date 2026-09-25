@@ -13,6 +13,7 @@ from libre_devops_helpers.cli.options import (
     SheetOption,
     SortOption,
     UniqueOption,
+    WhereOption,
     get_runtime,
     names,
 )
@@ -37,6 +38,7 @@ def devices(
     from_file: FromFileOption = None,
     column: ColumnOption = None,
     sheet: SheetOption = None,
+    where: WhereOption = None,
     profile: ProfileOption = None,
     sort: SortOption = None,
     unique: UniqueOption = None,
@@ -48,7 +50,7 @@ def devices(
     carry: use a profile with its own app registration. Exits 3 when any device is not
     enrolled.
     """
-    wanted = names(devices, from_file, column, sheet)
+    wanted = names(devices, from_file, column, sheet, where)
     runtime = get_runtime(ctx).microsoft
     intune = runtime.intune(runtime.profile(profile))
     results = [(name, intune.find_devices(name)) for name in wanted]

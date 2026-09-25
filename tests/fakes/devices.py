@@ -11,6 +11,8 @@ from libre_devops_helpers.microsoft.intune import IntuneClient
 from libre_devops_helpers.microsoft.xdr import XdrClient
 
 GROUP_ID = "55555555-5555-5555-5555-555555555555"
+# A second group, for devices expected in two ("Pilot" and "Patched").
+PATCHED_ID = "66666666-6666-6666-6666-666666666666"
 
 NOW = datetime(2026, 9, 24, 12, 0, tzinfo=UTC)
 
@@ -31,6 +33,7 @@ class FakeTenant:
         self.machines: dict[str, list[dict]] = {}
         self.managed: dict[str, list[dict]] = {}
         self.group_members: list[str] = []
+        self.patched_members: list[str] = []
         self.fail: dict[str, tuple[int, dict]] = {}
         self.calls: list[str] = []
 
@@ -89,11 +92,14 @@ class FakeTenant:
             name = query["$filter"][0].split("'")[1]
             return (200, {"value": self.entra.get(name, [])})
         if parts.path == "/v1.0/groups":
+            if "'Patched'" in query.get("$filter", [""])[0]:
+                return (200, {"value": [{"id": PATCHED_ID, "displayName": "Patched"}]})
             return (200, {"value": [{"id": GROUP_ID, "displayName": "Pilot"}]})
         if parts.path == f"/v1.0/groups/{GROUP_ID}":
             return (200, {"id": GROUP_ID, "displayName": "Pilot"})
         if parts.path.endswith("/transitiveMembers/microsoft.graph.device"):
-            return (200, {"value": [{"id": object_id(name)} for name in self.group_members]})
+            members = self.patched_members if PATCHED_ID in parts.path else self.group_members
+            return (200, {"value": [{"id": object_id(name)} for name in members]})
         if parts.path.endswith("/transitiveMemberOf/microsoft.graph.group"):
             return (200, {"value": [{"id": GROUP_ID, "displayName": "Pilot"}]})
         if parts.path == "/v1.0/deviceManagement/managedDevices":
