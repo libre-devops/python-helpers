@@ -657,7 +657,7 @@ wheels = [
 
 [[package]]
 name = "libre-devops-helpers"
-version = "0.5.1rc3"
+version = "0.5.1"
 source = { editable = "." }
 dependencies = [
     { name = "requests" },
