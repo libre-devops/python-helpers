@@ -77,6 +77,11 @@ tab; the full scan is kept with each run.
 3. `just release`: it checks the tree is clean and in step with `origin/main`, that the
    changelog has the version and the tag is new, then tags and pushes.
 
+A pre-release, for trying a build where only PyPI (or a proxy of it, such as JFrog) can be
+reached, is the same with a version such as `0.5.1rc1`. PyPI takes it, but only asking for that
+version by name (or `--pre`) gets it; the GitHub release is marked a pre-release, and its
+images get only their exact tags, so `latest`, `slim` and the docs stay on the last release.
+
 The release workflow runs CI again as a gate, builds, scans and pushes both images with
 attestations, and only then creates the GitHub release with the wheel, sdist and
 `SHA256SUMS`. A release never exists without its images.

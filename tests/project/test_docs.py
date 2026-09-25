@@ -127,11 +127,16 @@ def test_install_lines_name_the_current_release():
         found
         for page in PAGES
         for found in re.findall(
-            rf"install [^\n]*(?:@v|{re.escape(brand.DISTRIBUTION)}==)(\d+\.\d+\.\d+)",
+            rf"install [^\n]*(?:@v|{re.escape(brand.DISTRIBUTION)}==)"
+            r"(\d+\.\d+\.\d+(?:(?:a|b|rc)\d+|\.dev\d+)?)",
             page.read_text(),
         )
     }
-    assert pinned == {version}
+    if re.fullmatch(r"\d+\.\d+\.\d+", version):
+        assert pinned == {version}
+    else:
+        # A pre-release (0.5.1rc1) is for trying out: the docs stay on the last release.
+        assert len(pinned) == 1, pinned
 
 
 def test_the_readme_pypi_gets_links_to_files_that_exist():
