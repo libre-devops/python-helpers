@@ -22,9 +22,12 @@ class FakeAdapter(BaseAdapter):
         super().__init__()
         self.handler = handler
         self.requests: list[requests.PreparedRequest] = []
+        # What each request was sent with: its proxies and TLS verification.
+        self.sent: list[dict[str, Any]] = []
 
     def send(self, request, stream=False, timeout=None, verify=True, cert=None, proxies=None):
         self.requests.append(request)
+        self.sent.append({"verify": verify, "proxies": dict(proxies or {})})
         reply = self.handler(request)
         if isinstance(reply, Exception):
             raise reply

@@ -15,7 +15,8 @@ or `LDO_CONFIG` points. It is created readable only by you, has a section per ve
 never holds a secret. Unknown keys are rejected, so a typo fails loudly.
 
 ```toml
-# ca_bundle = "~/certs/proxy-ca.pem"   # a CA for every HTTPS call, behind a TLS-inspecting proxy
+# proxy = "127.0.0.1:3128"             # behind a corporate proxy, e.g. cntlm (see network.md)
+# ca_bundle = "~/certs/proxy-ca.pem"   # a TLS-inspecting proxy's root, when not in the OS store
 
 [microsoft]
 default_profile = "prod-tenant"
@@ -49,7 +50,9 @@ A profile is a tenant, optionally pinned to a subscription, with one way of gett
 | `workspace_id` | The Log Analytics workspace for `logs query` without `--workspace`. |
 | `mde_url` | A regional Defender for Endpoint endpoint, e.g. `https://api-eu.securitycenter.microsoft.com`. |
 
-ServiceNow profiles are described in [ServiceNow](servicenow.md#configuration).
+ServiceNow profiles are described in [ServiceNow](servicenow.md#configuration). The
+top-level `proxy`, `no_proxy` and `ca_bundle` apply to every call, and to the Azure CLI; see
+[Proxies and certificates](network.md).
 
 ## Options every command takes
 
@@ -165,6 +168,9 @@ service:
 | `LDO_SERVICE_NAME`, `LDO_TRACE_ID` and the rest | What OTLP logs say about themselves; see [OpenTelemetry logs](#opentelemetry-logs). |
 | `LDO_REAUTH` | When the Azure CLI's sign-in lapses on a terminal: unset asks to sign in again in a browser, `device-code` asks and uses a device code, `off` never asks. |
 | `LDO_TOKEN_CACHE` | Another file for kept sign-ins, e.g. a container volume. |
+| `LDO_PROXY_ADDRESS` | The proxy for `ldo` (and the Azure CLI it runs), winning over `proxy` and `HTTPS_PROXY`, e.g. `127.0.0.1:3129` for cntlm. |
+| `HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY`, `NO_PROXY` | As every tool reads them. See [Proxies and certificates](network.md). |
+| `LDO_CA_BUNDLE`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE` | A CA bundle to use exactly as it is, in place of the public roots with the OS store. |
 | `LDO_NO_BANNER`, `NO_COLOR` | No banner; no colour. The banner only ever shows on a terminal. |
 | `AZURE_CLIENT_SECRET`, `AZURE_FEDERATED_TOKEN_FILE` | For `client-secret` and `workload-identity` profiles, as the Azure SDKs use them. |
 | `SNOW_INSTANCE_URL`, `SNOW_CLIENT_ID`, `SNOW_CLIENT_SECRET`, `SNOW_INSTANCE_USERNAME`, `SNOW_INSTANCE_PASSWORD` | ServiceNow, with or without a config file. |

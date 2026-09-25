@@ -5,7 +5,8 @@ platform config directory (``~/.config/ldo/config.toml`` on Linux and macOS, und
 ``%APPDATA%`` on Windows). It lives outside any repository because it describes
 environments, not code, and it never holds a secret.
 
-The top level holds what every vendor shares (``ca_bundle``). Each vendor layer reads and
+The top level holds what every vendor shares (the network: ``proxy``, ``no_proxy`` and
+``ca_bundle``; see ``core.network``). Each vendor layer reads and
 validates its own section (``[microsoft]``, ...) with the field readers here, so every
 section rejects unknown keys and bad values the same way.
 """
@@ -21,7 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from libre_devops_helpers.core import brand
+from libre_devops_helpers.core import brand, network
 from libre_devops_helpers.core.errors import ConfigError, ConfigNotFoundError
 from libre_devops_helpers.core.util import is_guid
 
@@ -29,12 +30,19 @@ CONFIG_HEADER = f"""\
 # {brand.DISPLAY_NAME} ({brand.COMMAND}) configuration. Each vendor has its own section;
 # every key is described in {brand.docs("configuration")}
 #
-# Optional PEM bundle for a TLS-inspecting proxy, used for every HTTPS call. Without it,
-# SSL_CERT_FILE or the bundled CA list is used.
+# Behind a corporate proxy? Every HTTPS call, and the Azure CLI, go the same way. HTTPS_PROXY
+# and NO_PROXY work as usual; these win over them (LDO_PROXY_ADDRESS wins over both).
+# proxy = "127.0.0.1:3128"                  # e.g. cntlm or Px, for a proxy that wants NTLM
+# no_proxy = "localhost,.corp.example"      # hosts that go direct
+#
+# Certificates: the public roots and this machine's store (where IT installs a TLS-inspecting
+# proxy's root) are trusted. ca_bundle adds more; LDO_CA_BUNDLE or REQUESTS_CA_BUNDLE names a
+# bundle to use exactly instead.
 # ca_bundle = "~/certs/proxy-ca.pem"
 """
 
 _NAME = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+NETWORK_KEYS = ("ca_bundle", "proxy", "no_proxy")
 
 
 @dataclass(frozen=True)
@@ -44,6 +52,12 @@ class ConfigFile:
     path: Path
     data: Mapping[str, Any] = field(default_factory=dict)
     ca_bundle: Path | None = None
+    proxy: str | None = None
+    no_proxy: tuple[str, ...] = ()
+
+    def network_settings(self) -> network.NetworkSettings:
+        """What the file says about the network, for ``core.network.configure``."""
+        return network.NetworkSettings(self.proxy, self.no_proxy, self.ca_bundle)
 
     def section(self, name: str) -> Mapping[str, Any] | None:
         """A vendor's section, or None when the file has none."""
@@ -99,14 +113,19 @@ def parse_config_file(
     """Validate already-parsed TOML's shared settings."""
     where = str(path)
     if sections is not None:
-        reject_unknown(data, frozenset({"ca_bundle", *sections}), where)
+        reject_unknown(data, frozenset({*NETWORK_KEYS, *sections}), where)
     ca_bundle = data.get("ca_bundle")
     if ca_bundle is not None and not isinstance(ca_bundle, str):
         raise ConfigError(f"{where}: ca_bundle must be a path string")
+    proxy = data.get("proxy")
+    if proxy is not None and not isinstance(proxy, str):
+        raise ConfigError(f'{where}: proxy must be a string, e.g. "127.0.0.1:3128"')
     return ConfigFile(
         path=path,
         data=dict(data),
         ca_bundle=Path(ca_bundle).expanduser() if ca_bundle else None,
+        proxy=network.normalise_proxy(proxy, f"{where}: proxy") if proxy else None,
+        no_proxy=network.split_list(data.get("no_proxy"), f"{where}: no_proxy"),
     )
 
 

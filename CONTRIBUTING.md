@@ -5,6 +5,10 @@ command or improving the documentation.
 
 ## Workflow
 
+Working with an AI coding assistant? Its instructions are in [AI.md](AI.md), which Claude
+Code, GitHub Copilot and Codex all read (through `CLAUDE.md`, `.github/copilot-instructions.md`
+and `AGENTS.md`). Edit `AI.md` and run `just ai`; a test fails when `AGENTS.md` lags behind.
+
 1. Fork the repository and branch from `main`.
 2. Run `just sync` (or `uv sync`) to create the environment.
 3. Make your change, with tests.

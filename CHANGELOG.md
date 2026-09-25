@@ -5,10 +5,39 @@ All notable changes to libre-devops-helpers are recorded here. The project follo
 
 ## Unreleased
 
+### Added
+
+- Corporate proxy support. Every HTTPS call, and every `az` `ldo` runs, follow one set of
+  rules: loopback and the metadata endpoint always direct, then `no_proxy` and `NO_PROXY`,
+  then `LDO_PROXY_ADDRESS`, the config file's `proxy`, `HTTPS_PROXY` / `HTTP_PROXY` /
+  `ALL_PROXY`, and the operating system's setting. An address without a scheme means
+  `http://`, as for cntlm and Px, which sign in to an NTLM or Kerberos proxy for you.
+- The operating system's certificate store is trusted by default, with the public roots
+  and the config file's `ca_bundle`, in one bundle the Azure CLI is handed as
+  `REQUESTS_CA_BUNDLE` too, so both work behind a TLS-inspecting proxy whose root IT has
+  installed. `LDO_CA_BUNDLE`, `REQUESTS_CA_BUNDLE` or `CURL_CA_BUNDLE` names a bundle to use
+  exactly instead. No new dependency.
+- `ldo network test`: asks Entra ID, Graph, Azure Resource Manager, Defender and each
+  ServiceNow instance (and any `--url`) for an unsigned answer, and says which proxy each
+  call used, which certificates are trusted, and what to try when one fails: a proxy's
+  NTLM sign-in (cntlm or Px), a proxy that is not running, a TLS-inspecting proxy's
+  certificate (with its issuer named), or a local proxy listening on 3128 or 3129.
+- `AI.md`: instructions for AI coding assistants, read by Claude Code (through `CLAUDE.md`),
+  GitHub Copilot (`.github/copilot-instructions.md`, and `AGENTS.md` for its coding agent)
+  and Codex (`AGENTS.md`). `AGENTS.md` is written from it by `just ai`, and a test fails
+  when it falls behind.
+
 ### Changed
 
 - The README installs from PyPI (`uv tool install`, `pipx`, `uv pip` or `pip`), with a
   PyPI badge; installing a tag from GitHub is still shown.
+
+### Fixed
+
+- `ca_bundle` replaced the public roots rather than adding to them, so a host a proxy does
+  not inspect (sign-in often is not) failed to verify, and it never reached the Azure CLI.
+  It now adds to the public roots and the OS store, for both.
+
 
 ## 0.4.1
 

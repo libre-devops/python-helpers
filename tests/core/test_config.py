@@ -57,3 +57,28 @@ def test_default_config_path_uses_xdg_config_home(monkeypatch, tmp_path):
     monkeypatch.delenv("LDO_CONFIG", raising=False)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     assert default_config_path() == tmp_path / "ldo" / "config.toml"
+
+
+def test_the_network_settings_are_read_from_the_top_level(tmp_path):
+    file = parse_config_file(
+        {"proxy": "127.0.0.1:3129", "no_proxy": ".corp.example, localhost", "ca_bundle": "c.pem"},
+        tmp_path / "config.toml",
+        sections=["microsoft"],
+    )
+    settings = file.network_settings()
+    assert settings.proxy == "http://127.0.0.1:3129"
+    assert settings.no_proxy == (".corp.example", "localhost")
+    assert settings.ca_bundle is not None
+
+
+@pytest.mark.parametrize(
+    ("data", "message"),
+    [
+        ({"proxy": 3128}, "proxy must be a string"),
+        ({"proxy": "socks5://x:1"}, "is not a proxy address"),
+        ({"no_proxy": 7}, "comma-separated string or a list"),
+    ],
+)
+def test_bad_network_settings_are_refused(tmp_path, data, message):
+    with pytest.raises(ConfigError, match=message):
+        parse_config_file(data, tmp_path / "config.toml", sections=["microsoft"])

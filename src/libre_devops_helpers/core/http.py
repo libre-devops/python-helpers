@@ -24,7 +24,7 @@ from urllib.parse import quote, urlencode, urlsplit
 import requests
 
 from libre_devops_helpers import __version__
-from libre_devops_helpers.core import brand
+from libre_devops_helpers.core import brand, network
 from libre_devops_helpers.core.errors import ApiError
 
 log = logging.getLogger(__name__)
@@ -82,6 +82,12 @@ class ApiClient:
         self._refresh_token: Callable[[], None] | None = refresh if callable(refresh) else None
         self._session = session or requests.Session()
         self._owns_session = session is None
+        if self._owns_session:
+            # Proxies and certificates follow core.network's rules, not requests' own
+            # reading of the environment, so they are the same for every call.
+            self._session.trust_env = False
+        # True means the combined bundle core.network resolves (the public roots, the OS
+        # store and the config's ca_bundle); a path means that bundle exactly.
         self._verify = verify
         self._timeout = timeout
         self._max_attempts = max_attempts
@@ -241,7 +247,8 @@ class ApiClient:
                     json=json_body,
                     data=form,
                     timeout=self._timeout,
-                    verify=self._verify,
+                    verify=network.ca_bundle().path if self._verify is True else self._verify,
+                    proxies=network.requests_proxies(url),
                     allow_redirects=False,
                 )
             except (requests.ConnectionError, requests.Timeout) as exc:

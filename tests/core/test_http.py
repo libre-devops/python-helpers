@@ -291,3 +291,31 @@ def test_get_text_returns_a_plain_text_body_and_retries_like_a_get():
     assert api.get_text("/output", params={"api-version": "1"}) == "line one\nline two\n"
     assert len(adapter.requests) == 2
     assert len(sleeps) == 1
+
+
+def test_each_call_goes_through_the_network_rules(monkeypatch):
+    from libre_devops_helpers.core import network
+
+    api, adapter, _ = client(lambda request: (200, {}))
+    # The environment names a proxy but NO_PROXY sends this host direct: requests, left to
+    # itself, would still read the proxy back in. Told "direct" outright, it cannot.
+    monkeypatch.setenv("HTTPS_PROXY", "http://env-proxy:8080")
+    monkeypatch.setenv("NO_PROXY", "graph.microsoft.com")
+    api.get("/v1.0/me")
+    assert adapter.sent[0]["proxies"] == {}
+    assert adapter.sent[0]["verify"] == network.ca_bundle().path
+    monkeypatch.delenv("NO_PROXY")
+    monkeypatch.setenv("LDO_PROXY_ADDRESS", "127.0.0.1:3129")
+    api.get("/v1.0/me")
+    assert adapter.sent[1]["proxies"]["https"] == "http://127.0.0.1:3129"
+
+
+def test_a_bundle_the_caller_names_is_used_as_it_is():
+    api, adapter, _ = client(lambda request: (200, {}), verify="/etc/corp/bundle.pem")
+    api.get("/x")
+    assert adapter.sent[0]["verify"] == "/etc/corp/bundle.pem"
+
+
+def test_a_session_the_client_makes_ignores_requests_own_environment_reading():
+    api = ApiClient(BASE, lambda: "tok")
+    assert api._session.trust_env is False

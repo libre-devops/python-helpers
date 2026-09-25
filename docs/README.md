@@ -9,6 +9,7 @@
 | [Configuration](configuration.md) | the config file, profiles, options every command takes, environment variables, exit codes |
 | [Signing in](authentication.md) | the ways to sign in, automation, when a sign-in lapses, keeping a sign-in, your own app registration |
 | [Permissions](permissions.md) | what each command needs, and what the Azure CLI's token covers |
+| [Proxies and certificates](network.md) | corporate proxies, cntlm and Px, TLS inspection, `network test` |
 | [Container images](containers.md) | the images, their tags, running and building them |
 
 ## Commands

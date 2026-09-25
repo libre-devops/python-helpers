@@ -64,3 +64,19 @@ def test_missing_az_is_reported(monkeypatch):
     monkeypatch.setattr("shutil.which", lambda name: None)
     with pytest.raises(AzCliError, match="not on PATH"):
         AzureCliRunner().run("account", "show")
+
+
+def test_az_runs_on_the_same_network_as_ldo(monkeypatch):
+    from libre_devops_helpers.core import network
+
+    runner, fake = az_runner(lambda args: (0, "{}", ""))
+    runner.run_json("account", "show")
+    env = fake.kwargs[0]["env"]
+    assert env["REQUESTS_CA_BUNDLE"] == network.ca_bundle().path
+    assert "HTTPS_PROXY" not in env
+    monkeypatch.setenv("LDO_PROXY_ADDRESS", "127.0.0.1:3129")
+    runner.run("login", interactive=True, env={"AZURE_CONFIG_DIR": "/tmp/az"})
+    env = fake.kwargs[1]["env"]
+    assert env["HTTPS_PROXY"] == "http://127.0.0.1:3129"
+    assert "localhost" in env["NO_PROXY"]  # az login's browser redirect lands on localhost
+    assert env["AZURE_CONFIG_DIR"] == "/tmp/az"  # a caller's own settings are kept

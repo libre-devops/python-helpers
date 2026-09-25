@@ -26,6 +26,7 @@ from libre_devops_helpers.cli.commands import (
     keyvault,
     logicapp,
     logs,
+    network,
     pim,
     pretty,
     profiles,
@@ -103,6 +104,7 @@ def _root(
         ctx.obj = Runtime(config_path=config_path)
     elif config_path is not None:
         ctx.obj.config_path = config_path
+    ctx.obj.configure_network()
     ctx.call_on_close(ctx.obj.close)
     if ctx.invoked_subcommand is None:
         # Bare 'ldo': a greeting, then the help.
@@ -128,6 +130,7 @@ for _module in (
     devices,
     snow,
     pretty,
+    network,
 ):
     _module.register(app)
 # Token commands are about Entra-issued tokens, so they live in the entra group.

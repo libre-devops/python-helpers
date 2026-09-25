@@ -47,6 +47,9 @@ ldo devices check -f plan.xlsx --column FQDN
 With docker, use `--user "$(id -u):$(id -g)"` in place of `--userns`. The `z` option relabels
 mounts for SELinux and does nothing elsewhere.
 
+Behind a corporate proxy, pass it in with `-e LDO_PROXY_ADDRESS=...` (a cntlm on the host is
+at `host.containers.internal`); see [Proxies and certificates](network.md#in-a-container).
+
 `slim` has no Azure CLI. Use it with a `device-code` profile (and a volume at
 `/home/ldo/.local/state/ldo` to keep the sign-in), or for automation with a
 `workload-identity` profile and the job's federated token passed through.

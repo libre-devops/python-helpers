@@ -20,3 +20,28 @@ def plain_stderr():
     render.structured_output(False)
     yield
     render.structured_output(False)
+
+
+@pytest.fixture(autouse=True)
+def default_network(monkeypatch, tmp_path_factory):
+    """No test builds a CA bundle in your home or follows your proxy: each uses the public
+    roots as an explicit bundle, no proxy, and the network's default rules."""
+    import requests.certs
+
+    from libre_devops_helpers.core import network, trust
+
+    monkeypatch.setenv("LDO_CA_BUNDLE", requests.certs.where())
+    # A test that builds a combined bundle writes it here, never in your own cache.
+    cache = tmp_path_factory.mktemp("cache")
+    monkeypatch.setenv("XDG_CACHE_HOME", str(cache))
+    monkeypatch.setenv("LOCALAPPDATA", str(cache))
+    for name in ("LDO_PROXY_ADDRESS", "HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "NO_PROXY"):
+        monkeypatch.delenv(name, raising=False)
+        monkeypatch.delenv(name.lower(), raising=False)
+    monkeypatch.delenv("REQUESTS_CA_BUNDLE", raising=False)
+    monkeypatch.delenv("CURL_CA_BUNDLE", raising=False)
+    network.configure(network.NetworkSettings())
+    trust.forget()
+    yield
+    network.configure(network.NetworkSettings())
+    trust.forget()

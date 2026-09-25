@@ -24,7 +24,7 @@ import typer
 
 from libre_devops_helpers.cli import render
 from libre_devops_helpers.cli.servicenow_runtime import ServiceNowRuntime
-from libre_devops_helpers.core import brand
+from libre_devops_helpers.core import brand, network
 from libre_devops_helpers.core.auth import CachingTokenProvider
 from libre_devops_helpers.core.browser import can_launch_browser
 from libre_devops_helpers.core.config import ConfigFile, load_config_file
@@ -140,13 +140,21 @@ class Runtime:
             return None
 
     def verify(self) -> bool | str:
-        """TLS verification for requests: True, or the config's CA bundle path."""
-        file = self.optional_config_file()
-        if file is None or file.ca_bundle is None:
-            return True
-        if not file.ca_bundle.is_file():
-            raise ConfigError(f"ca_bundle not found: {file.ca_bundle}")
-        return str(file.ca_bundle)
+        """TLS verification for the clients: True, meaning core.network's bundle (the
+        public roots, the OS store and the config's ca_bundle, or an explicit bundle)."""
+        return True
+
+    def configure_network(self) -> None:
+        """Apply the config file's proxy and certificate settings to every call from now on.
+
+        A config file with a mistake in it is reported by the command that reads it; until
+        then the network keeps its defaults, so a command that needs no config still runs.
+        """
+        try:
+            file = self.optional_config_file()
+        except ConfigError:
+            return
+        network.configure(file.network_settings() if file else network.NetworkSettings())
 
     def track(self, client: C) -> C:
         """Close ``client`` when the command finishes."""

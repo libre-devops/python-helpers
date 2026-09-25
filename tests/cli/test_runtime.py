@@ -6,7 +6,7 @@ import pytest
 from fakes.azcli import FakeAzState, account_json, az_runner
 from fakes.http import form_body, routes
 from fakes.ids import OTHER_SUBSCRIPTION, OTHER_TENANT, SUBSCRIPTION, TENANT
-from fakes.tenant import invoke, run
+from fakes.tenant import invoke, run, runner
 from libre_devops_helpers.cli.runtime import Runtime
 from libre_devops_helpers.core import brand
 from libre_devops_helpers.core.errors import ReauthRequired
@@ -150,3 +150,26 @@ def test_a_worker_thread_is_never_asked(tmp_path):
     worker.join()
     assert outcome == [False]
     assert asked == []
+
+
+def test_the_config_files_network_settings_apply_to_every_call(tmp_path):
+    from libre_devops_helpers.cli import app
+    from libre_devops_helpers.core import network
+
+    config = tmp_path / "config.toml"
+    config.write_text('proxy = "127.0.0.1:3129"\nno_proxy = [".corp.example"]\n', "utf-8")
+    result = runner.invoke(app, ["--config", str(config), "config", "path"])
+    assert result.exit_code == 0, result.output
+    assert network.settings().proxy == "http://127.0.0.1:3129"
+    assert network.settings().no_proxy == (".corp.example",)
+
+
+def test_a_broken_config_file_does_not_stop_a_command_that_does_not_need_it(tmp_path):
+    from libre_devops_helpers.cli import app
+    from libre_devops_helpers.core import network
+
+    config = tmp_path / "config.toml"
+    config.write_text('proxy = "socks5://x:1"\n', "utf-8")
+    result = runner.invoke(app, ["--config", str(config), "json"], input='{"a": 1}')
+    assert result.exit_code == 0, result.output
+    assert network.settings() == network.NetworkSettings()

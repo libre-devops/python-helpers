@@ -52,6 +52,7 @@ PowerShell module, and importable as a library too.
 | `ldo logicapp` | offline checks, export and validation for Consumption Logic Apps and Sentinel playbooks | [logic apps](docs/logic-apps.md) |
 | `ldo snow` | ServiceNow: sign in, whoami, the instance, applications, a token | [servicenow](docs/servicenow.md) |
 | `ldo az` | switch the Azure CLI between profiles | [signing in](docs/authentication.md) |
+| `ldo network test` | test the way out through a corporate proxy: the proxy, the certificates, each service | [network](docs/network.md) |
 | `ldo json` | pretty-print any JSON (`az rest ... \| ldo json`) in colour, or as YAML | [configuration](docs/configuration.md#json-yaml-and-logs) |
 | `ldo profiles`, `ldo config` | your profiles, and the config file | [configuration](docs/configuration.md) |
 
@@ -114,10 +115,12 @@ for those. [Permissions](docs/permissions.md) lists what each command needs.
 ## Documentation
 
 - [Configuration](docs/configuration.md): profiles, common options, environment variables, exit codes
+- [Proxies and certificates](docs/network.md): corporate proxies, cntlm, TLS inspection
 - [Signing in](docs/authentication.md) and [Permissions](docs/permissions.md)
 - [Container images](docs/containers.md)
 - [Using it as a library](docs/library.md) and [Rebranding](docs/rebranding.md) for your organisation
 - [Development](docs/development.md): `just` recipes, tests, CI and releasing
+- [AI.md](AI.md): the instructions for AI coding assistants (Claude Code, Copilot, Codex)
 
 Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md), and
 [SECURITY.md](SECURITY.md) to report a vulnerability. Licensed under [MIT](LICENSE).

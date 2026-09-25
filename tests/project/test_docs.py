@@ -12,7 +12,12 @@ from libre_devops_helpers.cli import app
 from libre_devops_helpers.core import brand
 
 ROOT = Path(__file__).resolve().parents[2]
-PAGES = [ROOT / "README.md", *sorted((ROOT / "docs").glob("*.md"))]
+PAGES = [
+    ROOT / "README.md",
+    ROOT / "AI.md",
+    ROOT / ".github" / "copilot-instructions.md",
+    *sorted((ROOT / "docs").glob("*.md")),
+]
 BREAKS = {"|", "&&", "||", ";", ">", ">>", "<"}
 
 

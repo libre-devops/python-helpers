@@ -24,6 +24,11 @@ lock:
     uv lock
     uv lock --project container/azure-cli
 
+# Write AGENTS.md from AI.md, the instructions every AI coding assistant reads
+[group('setup')]
+ai:
+    uv run --no-sync python scripts/ai_instructions.py
+
 # Run ldo from the working tree, e.g. just run devices check web01
 [group('run')]
 run *args:

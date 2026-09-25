@@ -7,8 +7,10 @@ Shared by ``microsoft.auth.AzureCliCredential`` (tokens) and ``microsoft.azcli``
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
+from libre_devops_helpers.core import network
 from libre_devops_helpers.core.errors import CommandError
 from libre_devops_helpers.core.process import CommandRunner, Runner
 
@@ -29,6 +31,15 @@ class AzureCliRunner(CommandRunner):
     def __init__(self, executable: str | None = None, *, runner: Runner | None = None) -> None:
         options = {"runner": runner} if runner is not None else {}
         super().__init__("az", executable, install_hint=INSTALL_HINT, **options)
+
+    def run(
+        self, *args: str, interactive: bool = False, env: Mapping[str, str] | None = None
+    ) -> str:
+        """Run ``az`` on the same network as ldo: its proxy, and its CA bundle unless
+        ``REQUESTS_CA_BUNDLE`` already names one (see ``core.network``)."""
+        return super().run(
+            *args, interactive=interactive, env={**network.subprocess_env(), **(env or {})}
+        )
 
     def run_json(self, *args: str) -> Any:
         """Run ``az`` with JSON output and return the parsed value (None for no output)."""
