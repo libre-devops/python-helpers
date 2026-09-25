@@ -56,3 +56,13 @@ def test_it_publishes_only_to_its_own_registries():
     for job in ("package", "release"):
         assert GITLAB[job]["rules"] == [{"if": "$CI_COMMIT_TAG =~ /^v\\d+\\.\\d+\\.\\d+/"}], job
     assert "CI_REGISTRY_IMAGE" in "\n".join(GITLAB["container"]["script"])
+
+
+def test_the_package_job_does_not_ask_the_index_what_is_there():
+    # GitLab redirects the index of a package it does not hold to pypi.org, so a check
+    # there sees PyPI's files and skips the upload.
+    package = GITLAB["package"]
+    assert "UV_PUBLISH_CHECK_URL" not in package["variables"]
+    lines = "\n".join(package["script"]).splitlines()
+    commands = [line for line in lines if not line.lstrip().startswith("#")]
+    assert not any("uv publish" in line and "--check-url" in line for line in commands)

@@ -144,7 +144,7 @@ build:
   script:
     - |
       set -euo pipefail
-      version="$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+      read -r package version < <(python3 -c 'import tomllib; p = tomllib.load(open("pyproject.toml", "rb"))["project"]; print(p["name"], p["version"])')
       if [ -n "${CI_COMMIT_TAG:-}" ] && [ "v${version}" != "${CI_COMMIT_TAG}" ]; then
         echo "tag ${CI_COMMIT_TAG} does not match pyproject.toml version ${version}"
         exit 1
@@ -156,7 +156,7 @@ build:
       /tmp/smoke/bin/ldo --version
       /tmp/smoke/bin/ldo --help > /dev/null
       # For the jobs after this one: the version, and the tags each image is published with.
-      echo "VERSION=${version}" > build.env
+      printf 'PACKAGE=%s\nVERSION=%s\n' "${package}" "${version}" > build.env
       mkdir -p image-tags
       for variant in az tool; do
         python3 scripts/image_tags.py --version "${version}" --variant "${variant}" \
@@ -248,8 +248,7 @@ container:
 
 # Publish (release tags only) ---------------------------------------------------------
 
-# After the images, so the package never exists without them. A file already there (a
-# retried pipeline) is skipped, not an error.
+# After the images, so the package never exists without them.
 package:
   stage: publish
   needs: [build, container]
@@ -258,10 +257,44 @@ package:
     - *release-tag
   variables:
     UV_PUBLISH_URL: ${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/pypi
-    UV_PUBLISH_CHECK_URL: ${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/pypi/simple
     UV_PUBLISH_USERNAME: gitlab-ci-token
   script:
-    - UV_PUBLISH_PASSWORD="${CI_JOB_TOKEN}" uv publish dist/*
+    - |
+      set -euo pipefail
+      # Whether this version is here already (a retried pipeline), asked of the packages
+      # API. Not of the PyPI index (uv publish --check-url): for a package it does not hold,
+      # GitLab redirects there to pypi.org, whose files would pass for its own.
+      present="$(python3 - <<'PY'
+      import json
+      import os
+      import urllib.parse
+      import urllib.request
+
+      env = os.environ
+      query = urllib.parse.urlencode(
+          {"package_type": "pypi", "package_name": env["PACKAGE"], "package_version": env["VERSION"]}
+      )
+      request = urllib.request.Request(
+          f"{env['CI_API_V4_URL']}/projects/{env['CI_PROJECT_ID']}/packages?{query}",
+          headers={"JOB-TOKEN": env["CI_JOB_TOKEN"]},
+      )
+      with urllib.request.urlopen(request, timeout=30) as response:
+          packages = json.load(response)
+
+      def normal(name):
+          return name.casefold().replace("_", "-").replace(".", "-")
+
+      print(any(
+          normal(item["name"]) == normal(env["PACKAGE"]) and item["version"] == env["VERSION"]
+          for item in packages
+      ))
+      PY
+      )"
+      if [ "${present}" = True ]; then
+        echo "${PACKAGE} ${VERSION} is in the package registry already"
+        exit 0
+      fi
+      UV_PUBLISH_PASSWORD="${CI_JOB_TOKEN}" uv publish dist/*.whl dist/*.tar.gz
 
 # The GitLab release, last: how to install from this project's registries, and the files'
 # checksums. A release that is there already (a retried pipeline) is left as it is.
@@ -283,8 +316,9 @@ release:
       import urllib.request
 
       env = os.environ
-      tag, version = env["CI_COMMIT_TAG"], env["VERSION"]
-      files = sorted(pathlib.Path("dist").iterdir())
+      tag, package, version = env["CI_COMMIT_TAG"], env["PACKAGE"], env["VERSION"]
+      dist = pathlib.Path("dist")
+      files = sorted([*dist.glob("*.whl"), *dist.glob("*.tar.gz")])
       sums = "\n".join(f"{hashlib.sha256(f.read_bytes()).hexdigest()}  {f.name}" for f in files)
       index = f"{env['CI_API_V4_URL']}/projects/{env['CI_PROJECT_ID']}/packages/pypi/simple"
       image = env["CI_REGISTRY_IMAGE"]
@@ -293,7 +327,7 @@ release:
           "" if final else "A pre-release: installed only by asking for this version.\n",
           f"What changed: [CHANGELOG.md]({env['CI_PROJECT_URL']}/-/blob/{tag}/CHANGELOG.md).\n",
           "```bash",
-          f"uv tool install --index {index} libre-devops-helpers=={version}",
+          f"uv tool install --index {index} {package}=={version}",
           f"podman pull {image}:{version}          # with the Azure CLI",
           f"podman pull {image}:{version}-slim     # the tool alone",
           "```\n",
