@@ -47,6 +47,7 @@ class PollOutcome(Generic[T]):
 
     @property
     def complete(self) -> bool:
+        """Whether polling stopped because the condition was met, not at a limit."""
         return self.reason == "complete"
 
 

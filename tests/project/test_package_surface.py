@@ -27,6 +27,7 @@ VENDORS = {
         "graph",
         "xdr",
         "incidents",
+        "detections",
         "intune",
         "azure",
         "keyvault",

@@ -7,33 +7,32 @@ registration credentials and Conditional Access policies.
 from __future__ import annotations
 
 import itertools
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
-from typing import Any, Literal, Self, TypeVar
+from operator import attrgetter
+from typing import Any, Literal, TypeVar
 from urllib.parse import quote
 
-import requests
-
-from libre_devops_helpers.core.auth import TokenProvider, token_source
+from libre_devops_helpers.core import fields
 from libre_devops_helpers.core.errors import (
     AmbiguousError,
     ApiError,
-    LdoError,
     NotFoundError,
 )
-from libre_devops_helpers.core.http import ApiClient
+from libre_devops_helpers.core.sorting import sort_records
 from libre_devops_helpers.core.util import (
     candidate_names,
     is_guid,
     odata_datetime,
     odata_string,
-    parse_datetime,
+    require_guid,
 )
-from libre_devops_helpers.microsoft.clouds import PUBLIC
-from libre_devops_helpers.microsoft.config import Profile
+from libre_devops_helpers.microsoft.api_clients import GraphServiceClient
 from libre_devops_helpers.microsoft.entra.models import (
     AppCredential,
     ConditionalAccessPolicy,
+    DeviceLookup,
     DirectoryObject,
     EntraDevice,
     EntraGroup,
@@ -57,63 +56,14 @@ T = TypeVar("T")
 MemberKind = Literal["user", "device", "group", "servicePrincipal"]
 
 
-class EntraClient:
+class EntraClient(GraphServiceClient):
     """Entra ID lookups. Close it (or use ``with``) when done."""
-
-    def __init__(self, api: ApiClient) -> None:
-        self.api = api
-
-    @classmethod
-    def create(
-        cls,
-        tokens: TokenProvider,
-        tenant_id: str,
-        *,
-        graph_url: str = PUBLIC.graph_url,
-        verify: bool | str = True,
-        session: requests.Session | None = None,
-    ) -> EntraClient:
-        """A client for ``tenant_id`` that takes its Graph tokens from ``tokens``."""
-        api = ApiClient(
-            graph_url,
-            token_source(tokens, graph_url, tenant_id),
-            name="Microsoft Graph",
-            verify=verify,
-            session=session,
-        )
-        return cls(api)
-
-    @classmethod
-    def for_profile(
-        cls,
-        profile: Profile,
-        tokens: TokenProvider,
-        *,
-        verify: bool | str = True,
-        session: requests.Session | None = None,
-    ) -> EntraClient:
-        """A client for a configured profile's tenant, in the profile's cloud."""
-        return cls.create(
-            tokens,
-            profile.tenant_id,
-            graph_url=profile.cloud.graph_url,
-            verify=verify,
-            session=session,
-        )
-
-    def close(self) -> None:
-        self.api.close()
-
-    def __enter__(self) -> Self:
-        return self
-
-    def __exit__(self, *exc_info: object) -> None:
-        self.close()
 
     # Devices ----------------------------------------------------------------------
 
     def find_devices(self, name: str) -> list[EntraDevice]:
-        """Devices whose display name is ``name``, else its short hostname.
+        """Devices whose display name is ``name``, else its short hostname, the most
+        recently signed in first.
 
         Several results are normal: stale registrations keep the same name.
         """
@@ -134,18 +84,51 @@ class EntraClient:
         return []
 
     def _devices_matching(self, query: str) -> list[EntraDevice]:
-        return [
+        """Devices the filter matches, the most recently signed in first."""
+        devices = [
             EntraDevice.from_json(item)
             for item in self.api.get_all(
                 "/v1.0/devices", params={"$filter": query, "$select": EntraDevice.SELECT}
             )
         ]
+        return sort_records(devices, (attrgetter("last_sign_in"), True))
 
     def device_groups(
         self, device: EntraDevice | str, *, transitive: bool = True
     ) -> list[EntraGroup]:
         """Groups a device belongs to, including nested ones unless ``transitive=False``."""
         return self._groups_of("devices", _object_id(device), transitive)
+
+    def look_up_devices(
+        self,
+        names: Sequence[str],
+        groups: Sequence[EntraGroup] = (),
+        *,
+        transitive: bool = True,
+        workers: int = 8,
+    ) -> list[DeviceLookup]:
+        """Each name's devices, as ``find_devices`` finds them, and their membership of
+        ``groups`` (nested too, unless ``transitive=False``), in the order asked.
+
+        Each group's members are fetched once, and the first name is looked up here on
+        the calling thread, so a lapsed sign-in is met where someone can answer it; the
+        rest are looked up ``workers`` at a time.
+        """
+        members = {
+            group.id: frozenset(
+                device.id for device in self.group_devices(group, transitive=transitive)
+            )
+            for group in groups
+        }
+        if not names:
+            return []
+        first = self.find_devices(names[0])
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            rest = list(pool.map(self.find_devices, names[1:]))
+        return [
+            DeviceLookup(name, tuple(found), tuple(groups), members)
+            for name, found in zip(names, [first, *rest], strict=True)
+        ]
 
     def group_devices(
         self, group: EntraGroup | str, *, transitive: bool = True
@@ -399,14 +382,14 @@ def _credentials(
             found.append(
                 AppCredential(
                     owner_kind=owner_kind,
-                    owner_name=str(item.get("displayName") or ""),
-                    owner_id=str(item.get("id") or ""),
-                    app_id=str(item.get("appId") or ""),
+                    owner_name=fields.text(item, "displayName"),
+                    owner_id=fields.text(item, "id"),
+                    app_id=fields.text(item, "appId"),
                     kind=kind,
-                    name=str(entry.get("displayName") or entry.get("hint") or ""),
-                    key_id=str(entry.get("keyId") or ""),
-                    starts=parse_datetime(entry.get("startDateTime")),
-                    ends=parse_datetime(entry.get("endDateTime")),
+                    name=(fields.text(entry, "displayName") or fields.text(entry, "hint")),
+                    key_id=fields.text(entry, "keyId"),
+                    starts=fields.when(entry, "startDateTime"),
+                    ends=fields.when(entry, "endDateTime"),
                     raw=dict(entry),
                 )
             )
@@ -425,7 +408,4 @@ def _one(items: list[T], ref: str, singular: str, plural: str) -> T:
 
 
 def _object_id(value: EntraDevice | EntraGroup | EntraUser | DirectoryObject | str) -> str:
-    object_id = value if isinstance(value, str) else value.id
-    if not is_guid(object_id):
-        raise LdoError(f"not an Entra object id: {object_id!r}")
-    return object_id.strip()
+    return require_guid(value if isinstance(value, str) else value.id, "an Entra object id")

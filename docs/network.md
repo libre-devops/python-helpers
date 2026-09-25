@@ -33,6 +33,11 @@ Each call takes the first of these that applies:
 An address without a scheme, such as `127.0.0.1:3128`, means `http://`. Whichever proxy
 applies, the Azure CLI gets it too, as `HTTPS_PROXY` and `NO_PROXY`.
 
+An address may carry a user and password (`http://alice:secret@proxy.corp.example:8080`),
+for a proxy that takes a plain one. It is used as it is but never shown: `ldo network test`,
+its JSON and every message write `alice:***@`. A local cntlm or Px is still the better way,
+since then no password sits in your environment at all.
+
 ```toml
 proxy = "127.0.0.1:3128"
 no_proxy = ".corp.example, 10.0.0.0/8"

@@ -4,8 +4,9 @@ import pytest
 
 from fakes.http import routes
 from fakes.tenant import run
-from libre_devops_helpers.core import network
-from libre_devops_helpers.core.network import Probe, Route
+from libre_devops_helpers.core import probe as reach
+from libre_devops_helpers.core.network import Route
+from libre_devops_helpers.core.probe import Probe
 
 
 @pytest.fixture
@@ -24,7 +25,7 @@ def probes(monkeypatch):
             url, Route(None, "none"), status in set(expect), status, f"HTTP {status}", None, 0.1
         )
 
-    monkeypatch.setattr(network, "probe", probe)
+    monkeypatch.setattr(reach, "probe", probe)
     return seen, outcomes
 
 
@@ -103,3 +104,20 @@ def test_servicenow_instances_and_extra_urls_are_tested_too(config_file, probes)
 def test_an_extra_url_must_be_https(config_file, probes):
     result = run(config_file, routes({}), ["network", "test", "--url", "http://x"])
     assert result.exit_code == 2
+
+
+def test_a_proxy_password_never_reaches_the_screen_or_json(config_file, probes, monkeypatch):
+    _, outcomes = probes
+    address = "http://alice:s3cret@127.0.0.1:3129"
+    monkeypatch.setenv("LDO_PROXY_ADDRESS", address)
+    outcomes["graph.microsoft.com"] = Probe(
+        "https://graph.microsoft.com/v1.0/",
+        Route(address, "LDO_PROXY_ADDRESS"),
+        True,
+        200,
+        "HTTP 200",
+    )
+    for output in ("table", "json", "csv", "tsv"):
+        result = run(config_file, routes({}), ["network", "test", "-o", output])
+        assert "s3cret" not in result.output, output
+        assert "alice:***@127.0.0.1:3129" in result.stdout, output

@@ -84,3 +84,18 @@ def test_sign_out_with_nothing_kept_or_an_azure_cli_profile_says_so(tmp_path, pr
     assert "keeps no sign-in" in memory.stderr
     cli = runner.invoke(app, ["entra", "sign-out"], obj=runtime(profiles_config))
     assert "az logout" in (cli.exception.hint or "")
+
+
+def test_token_checks_as_tsv_are_one_check_a_line_and_never_the_token(profiles_config):
+    result = runner.invoke(
+        app, ["entra", "token", "graph", "-o", "tsv"], obj=runtime(profiles_config)
+    )
+    assert result.exit_code == 0, result.output
+    lines = result.stdout.splitlines()
+    assert lines
+    assert all(len(line.split("\t")) == 3 for line in lines)
+    assert lines[0].split("\t")[0] in {"pass", "warn", "fail"}
+    raw = runner.invoke(app, ["entra", "token", "graph", "--raw"], obj=runtime(profiles_config))
+    token = raw.stdout.strip()
+    assert token.count(".") == 2
+    assert token not in result.stdout

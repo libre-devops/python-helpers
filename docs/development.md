@@ -7,7 +7,8 @@ environment, so `uv run just ...` works without installing it.
 
 ```bash
 just sync                  # install everything into .venv
-just check                 # lint, format check, tests with coverage: what every change must pass
+just check                 # lint, format, type check, tests with coverage: what every change must pass
+just typecheck             # mypy, strictly, on the package
 just ci                    # all of CI's checks: the above, Python 3.11, the audit and the build
 just test -k devices       # extra args go to pytest
 just fmt                   # apply formatting and safe lint fixes
@@ -28,6 +29,34 @@ The tests mirror the package (`tests/core`, `tests/microsoft/<feature>`, `tests/
 module per concern. `tests/project` tests the project itself: the layering, the rebrand, the
 layout, and that every example in these docs is a command that exists. Tests never touch the
 network, a real `az` or a real clock, so an hour-long watch runs in microseconds.
+
+`tests/project/test_json_output.py` runs every command against a tenant that answers
+everything (`tests/fakes/everything.py`) and compares the shape of its `-o json` (each key,
+and the kind of value under it) with the record in `tests/project/json_output.json`.
+Scripts read that JSON, so a key renamed or dropped fails there. A change that is meant goes
+in the changelog, then into the record:
+
+```bash
+LDO_RECORD_JSON_OUTPUT=1 just test tests/project/test_json_output.py
+```
+
+A new command that writes JSON needs an entry there too; a test says when one is missing.
+
+## Code quality
+
+`just check` holds every change to the same bar, and CI runs the same checks:
+
+- ruff, with its security rules (bandit's) and a complexity limit of 10 per function: past
+  that, split it. Every public module, class and function has a docstring saying what it
+  gives, and a comment says why, where the code cannot.
+- mypy in strict mode on the package, so the type hints are checked, not only read.
+- Coverage of at least the floor in `pyproject.toml`, which only ever goes up.
+- The layering test: `core` imports nothing of ours, a feature only `core` and its vendor
+  layer, and only `cli` prints or exits.
+
+The exceptions are in `pyproject.toml`, each with its reason: the tests may assert and run
+tools, a test fake (a routing table) may branch more than ten ways, and names like
+`SECRET_VARIABLE` are not secrets.
 
 ## Trying a build in a real tenant
 

@@ -7,21 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from libre_devops_helpers.core.util import parse_datetime
-
-
-def _map(value: object) -> Mapping[str, Any]:
-    return value if isinstance(value, Mapping) else {}
-
-
-def _text(data: Mapping[str, Any], key: str) -> str:
-    return str(data.get(key) or "")
-
-
-def _number(value: object) -> float | None:
-    if isinstance(value, bool) or not isinstance(value, int | float):
-        return None
-    return float(value)
+from libre_devops_helpers.core import fields
 
 
 @dataclass(frozen=True)
@@ -36,11 +22,12 @@ class Subscription:
 
     @classmethod
     def from_json(cls, data: Mapping[str, Any]) -> Subscription:
+        """A subscription as ARM lists it."""
         return cls(
-            id=_text(data, "subscriptionId").lower(),
-            name=_text(data, "displayName"),
-            state=_text(data, "state"),
-            tenant_id=_text(data, "tenantId").lower(),
+            id=fields.text(data, "subscriptionId").lower(),
+            name=fields.text(data, "displayName"),
+            state=fields.text(data, "state"),
+            tenant_id=fields.text(data, "tenantId").lower(),
             raw=dict(data),
         )
 
@@ -60,15 +47,16 @@ class AzureRoleAssignment:
 
     @classmethod
     def from_json(cls, data: Mapping[str, Any], role_name: str) -> AzureRoleAssignment:
-        properties = _map(data.get("properties"))
+        """A role assignment as ARM returns it, with its role's name looked up separately."""
+        properties = fields.mapping(data.get("properties"))
         return cls(
-            id=_text(data, "id"),
-            scope=_text(properties, "scope"),
+            id=fields.text(data, "id"),
+            scope=fields.text(properties, "scope"),
             role_name=role_name,
-            role_definition_id=_text(properties, "roleDefinitionId"),
-            principal_id=_text(properties, "principalId"),
-            principal_type=_text(properties, "principalType"),
-            condition=_text(properties, "condition"),
+            role_definition_id=fields.text(properties, "roleDefinitionId"),
+            principal_id=fields.text(properties, "principalId"),
+            principal_type=fields.text(properties, "principalType"),
+            condition=fields.text(properties, "condition"),
             raw=dict(data),
         )
 
@@ -85,12 +73,13 @@ class SecureScore:
 
     @classmethod
     def from_json(cls, subscription_id: str, data: Mapping[str, Any]) -> SecureScore:
-        score = _map(_map(data.get("properties")).get("score"))
+        """``subscription_id``'s secure score as Defender for Cloud returns it."""
+        score = fields.mapping(fields.mapping(data.get("properties")).get("score"))
         return cls(
             subscription_id=subscription_id,
-            current=_number(score.get("current")),
-            max=_number(score.get("max")),
-            percentage=_number(score.get("percentage")),
+            current=fields.number(score.get("current")),
+            max=fields.number(score.get("max")),
+            percentage=fields.number(score.get("percentage")),
             raw=dict(data),
         )
 
@@ -110,22 +99,24 @@ class SecureScoreControl:
 
     @property
     def points_lost(self) -> float:
+        """The points this control could still earn."""
         return (self.max or 0.0) - (self.current or 0.0)
 
     @classmethod
     def from_json(cls, data: Mapping[str, Any]) -> SecureScoreControl:
-        properties = _map(data.get("properties"))
-        score = _map(properties.get("score"))
+        """One secure score control, with how many resources pass and fail it."""
+        properties = fields.mapping(data.get("properties"))
+        score = fields.mapping(properties.get("score"))
 
         def count(key: str) -> int:
             value = properties.get(key)
             return value if isinstance(value, int) and not isinstance(value, bool) else 0
 
         return cls(
-            name=_text(properties, "displayName") or _text(data, "name"),
-            current=_number(score.get("current")),
-            max=_number(score.get("max")),
-            percentage=_number(score.get("percentage")),
+            name=fields.text(properties, "displayName") or fields.text(data, "name"),
+            current=fields.number(score.get("current")),
+            max=fields.number(score.get("max")),
+            percentage=fields.number(score.get("percentage")),
             healthy=count("healthyResourceCount"),
             unhealthy=count("unhealthyResourceCount"),
             not_applicable=count("notApplicableResourceCount"),
@@ -147,23 +138,25 @@ class Assessment:
 
     @property
     def unhealthy(self) -> bool:
+        """Whether the resource fails the assessment."""
         return self.status.casefold() == "unhealthy"
 
     @classmethod
     def from_json(cls, data: Mapping[str, Any]) -> Assessment:
-        properties = _map(data.get("properties"))
-        status = _map(properties.get("status"))
-        metadata = _map(properties.get("metadata"))
-        assessment_id = _text(data, "id")
+        """One assessment of one resource, whose id is the assessment's without its last part."""
+        properties = fields.mapping(data.get("properties"))
+        status = fields.mapping(properties.get("status"))
+        metadata = fields.mapping(properties.get("metadata"))
+        assessment_id = fields.text(data, "id")
         # The assessment id is the resource id with the assessment appended.
         resource_id = assessment_id.split("/providers/Microsoft.Security/assessments/", 1)[0]
         return cls(
             id=assessment_id,
-            name=_text(properties, "displayName") or _text(data, "name"),
-            status=_text(status, "code"),
-            severity=_text(metadata, "severity"),
+            name=fields.text(properties, "displayName") or fields.text(data, "name"),
+            status=fields.text(status, "code"),
+            severity=fields.text(metadata, "severity"),
             resource_id=resource_id,
-            cause=_text(status, "cause") or _text(status, "description"),
+            cause=fields.text(status, "cause") or fields.text(status, "description"),
             raw=dict(data),
         )
 
@@ -182,17 +175,19 @@ class DefenderPlan:
 
     @property
     def enabled(self) -> bool:
+        """Whether the plan is on (the Standard tier; Free is off)."""
         return self.pricing_tier.casefold() == "standard"
 
     @classmethod
     def from_json(cls, data: Mapping[str, Any]) -> DefenderPlan:
-        properties = _map(data.get("properties"))
+        """One Defender for Cloud plan as ARM returns it."""
+        properties = fields.mapping(data.get("properties"))
         return cls(
-            name=_text(data, "name"),
-            pricing_tier=_text(properties, "pricingTier"),
-            sub_plan=_text(properties, "subPlan"),
-            trial_remaining=_text(properties, "freeTrialRemainingTime"),
-            enabled_since=parse_datetime(properties.get("enablementTime")),
+            name=fields.text(data, "name"),
+            pricing_tier=fields.text(properties, "pricingTier"),
+            sub_plan=fields.text(properties, "subPlan"),
+            trial_remaining=fields.text(properties, "freeTrialRemainingTime"),
+            enabled_since=fields.when(properties, "enablementTime"),
             deprecated=properties.get("deprecated") is True,
             raw=dict(data),
         )

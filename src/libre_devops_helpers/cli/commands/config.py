@@ -22,6 +22,7 @@ config_app = typer.Typer(
 
 
 def register(app: typer.Typer) -> None:
+    """Add the ``config`` commands to ``app``."""
     app.add_typer(config_app, name="config")
 
 

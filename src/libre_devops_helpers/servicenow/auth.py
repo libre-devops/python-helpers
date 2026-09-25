@@ -22,23 +22,21 @@ is logged.
 from __future__ import annotations
 
 import base64
-import hashlib
 import json
 import logging
 import os
-import secrets
 import threading
 import webbrowser
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any
 from urllib.parse import parse_qs, quote, urlencode, urlsplit
 
 import requests
 
-from libre_devops_helpers.core.auth import AccessToken, utc_now
-from libre_devops_helpers.core.browser import can_launch_browser
+from libre_devops_helpers.core import fields
+from libre_devops_helpers.core.auth import AccessToken, Pkce, utc_now
+from libre_devops_helpers.core.browser import can_launch_browser, open_quietly
 from libre_devops_helpers.core.errors import ApiError, AuthError, LdoError, ReauthRequired
 from libre_devops_helpers.core.http import ApiClient
 from libre_devops_helpers.core.token_store import MemoryStore, TokenStore, open_store
@@ -141,6 +139,8 @@ class OAuthCredential:
         )
 
     def get_token(self, resource: str = "", tenant_id: str = "") -> AccessToken:
+        """A token: refreshed from the kept sign-in when there is one, else a new sign-in. The
+        arguments are there to fit TokenProvider; ServiceNow has no resources or tenants."""
         with self._lock:
             kept = self._recall()
             refresh = kept.get("refresh_token")
@@ -167,6 +167,7 @@ class OAuthCredential:
             return self._store.delete(self.key)
 
     def has_kept_sign_in(self) -> bool:
+        """Whether a sign-in is kept that could be refreshed without asking anyone."""
         try:
             return bool(self._decode(self._store.load(self.key)).get("refresh_token"))
         except LdoError:
@@ -185,23 +186,17 @@ class OAuthCredential:
             return self._grant(form, kept)
         if self._ask is None:
             raise self._needs_sign_in("signing in needs a browser and someone to paste back")
-        return self._browser_sign_in(kept)
+        return self._browser_sign_in(kept, self._ask)
 
-    def _browser_sign_in(self, kept: dict[str, str]) -> AccessToken:
-        verifier = secrets.token_urlsafe(64)
-        challenge = (
-            base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest())
-            .rstrip(b"=")
-            .decode()
-        )
-        state = secrets.token_urlsafe(24)
+    def _browser_sign_in(self, kept: dict[str, str], ask: Ask) -> AccessToken:
+        """The authorisation code flow with PKCE: a link to open, and the address it lands
+        on pasted back through ``ask``."""
+        proof = Pkce.new()
         params = {
             "response_type": "code",
             "client_id": self.app.client_id,
             "redirect_uri": self.app.redirect_uri,
-            "state": state,
-            "code_challenge": challenge,
-            "code_challenge_method": "S256",
+            **proof.parameters,
         }
         url = f"{self.app.instance}/oauth_auth.do?" + urlencode(params, quote_via=quote)
         self._notify(
@@ -210,17 +205,13 @@ class OAuthCredential:
             f"fine). Copy that whole address and paste it here.\n\n{url}\n"
         )
         if self._has_browser():
-            try:
-                self._open_browser(url)
-            except Exception:
-                log.debug("could not open a browser", exc_info=True)
-        assert self._ask is not None
-        pasted = self._ask("The address you landed on", False).strip()
+            open_quietly(self._open_browser, url)
+        pasted = ask("The address you landed on", False).strip()
         query = {key: values[0] for key, values in parse_qs(urlsplit(pasted).query).items()}
         if "error" in query:
             detail = query.get("error_description") or query["error"]
             raise AuthError(f"ServiceNow sign-in failed: {detail}")
-        if query.get("state") != state:
+        if query.get("state") != proof.state:
             raise AuthError(
                 "that address is not from this sign-in (its state does not match)",
                 hint="paste the whole address the browser landed on, from this sign-in",
@@ -232,7 +223,7 @@ class OAuthCredential:
             "grant_type": "authorization_code",
             "code": code,
             "redirect_uri": self.app.redirect_uri,
-            "code_verifier": verifier,
+            "code_verifier": proof.verifier,
         }
         return self._grant(form, kept)
 
@@ -265,7 +256,7 @@ class OAuthCredential:
             if typed or ("client_secret" in kept and self.app.client_secret is None):
                 record["client_secret"] = secret
             self._remember(record)
-        lifetime = _number(data.get("expires_in")) or DEFAULT_ACCESS_LIFETIME
+        lifetime = fields.number(data.get("expires_in")) or DEFAULT_ACCESS_LIFETIME
         return AccessToken(
             token=token,
             expires_on=now + timedelta(seconds=lifetime),
@@ -384,16 +375,6 @@ def credential_for(
         has_browser=has_browser,
         open_browser=open_browser,
     )
-
-
-def _number(value: Any) -> float | None:
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, int | float):
-        return float(value)
-    if isinstance(value, str) and value.strip().isdigit():
-        return float(value)
-    return None
 
 
 def _hint(exc: ApiError) -> str:

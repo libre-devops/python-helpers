@@ -61,14 +61,16 @@ class JsonFormatter(logging.Formatter):
     """One flat JSON object per record."""
 
     def format(self, record: logging.LogRecord) -> str:
+        """One record as a JSON object: time, level, logger, message, and a hint or exception."""
         data: dict[str, Any] = {
             "time": self.formatTime(record, "%Y-%m-%dT%H:%M:%S") + f".{int(record.msecs):03d}",
             "level": record.levelname.lower(),
             "logger": record.name,
             "message": record.getMessage(),
         }
-        if getattr(record, "hint", None):
-            data["hint"] = record.hint
+        hint = getattr(record, "hint", None)  # render.error's extra={"hint": ...}
+        if hint:
+            data["hint"] = hint
         if record.exc_info:
             data["exception"] = self.formatException(record.exc_info)
         return json.dumps(data)
@@ -107,6 +109,7 @@ class OtlpFormatter(logging.Formatter):
         self._span_id = otlp_hex_id(env.get(brand.env_var("SPAN_ID")), 16)
 
     def format(self, record: logging.LogRecord) -> str:
+        """One record as an OTLP/JSON LogsData document, on one line."""
         nanos = str(int(record.created * 1_000_000_000))
         attributes = [
             _attribute("code.function.name", f"{record.name}.{record.funcName}"),
@@ -114,8 +117,9 @@ class OtlpFormatter(logging.Formatter):
         ]
         if self._correlation_id:
             attributes.append(_attribute("correlation_id", self._correlation_id))
-        if getattr(record, "hint", None):
-            attributes.append(_attribute("hint", str(record.hint)))
+        hint = getattr(record, "hint", None)
+        if hint:
+            attributes.append(_attribute("hint", str(hint)))
         if record.exc_info and record.exc_info[0] is not None:
             error_type, error, trace = record.exc_info
             attributes += [

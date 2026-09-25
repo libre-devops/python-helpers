@@ -12,8 +12,8 @@ from libre_devops_helpers.cli.exits import ERROR
 from libre_devops_helpers.cli.options import OutputOption, ProfileOption, get_runtime
 from libre_devops_helpers.cli.render import Output
 from libre_devops_helpers.core import brand
-from libre_devops_helpers.core.errors import LdoError
-from libre_devops_helpers.microsoft import entra, graph, incidents, intune, pim, xdr
+from libre_devops_helpers.core.errors import ConfigError, InputError
+from libre_devops_helpers.microsoft import detections, entra, graph, incidents, intune, pim, xdr
 from libre_devops_helpers.microsoft.resources import resolve_resource
 from libre_devops_helpers.microsoft.tokens import (
     Check,
@@ -30,6 +30,7 @@ REQUIREMENTS = (
     *intune.REQUIREMENTS,
     *pim.REQUIREMENTS,
     *incidents.REQUIREMENTS,
+    *detections.REQUIREMENTS,
     *graph.REQUIREMENTS,
 )
 
@@ -44,6 +45,7 @@ AllClaimsOption = Annotated[
 
 
 def register(app: typer.Typer) -> None:
+    """Add ``token``, ``inspect-token`` and ``sign-out`` to ``app`` (the ``entra`` group)."""
     app.command("token")(token)
     app.command("inspect-token")(inspect_token)
     app.command("sign-out")(sign_out)
@@ -58,7 +60,7 @@ def sign_out(ctx: typer.Context, profile: ProfileOption = None) -> None:
     runtime = get_runtime(ctx).microsoft
     selected = runtime.profile(profile)
     if selected.auth == "azure-cli":
-        raise LdoError(
+        raise ConfigError(
             f"profile {selected.name!r} uses the Azure CLI's sign-in, which it keeps itself",
             hint="run 'az logout', or 'az account clear' to forget every account",
         )
@@ -144,13 +146,13 @@ def inspect_token(
     """Decode a token you already have and check its claims. Nothing is sent anywhere."""
     if value is None or value == "-":
         if sys.stdin.isatty():
-            raise LdoError(
+            raise InputError(
                 "no token given",
                 hint=f"pipe one in, e.g. 'pbpaste | {brand.COMMAND} entra inspect-token'",
             )
         value = sys.stdin.read()
         if not value.strip():
-            raise LdoError("no token on stdin")
+            raise InputError("no token on stdin")
     decoded = decode_token(value)
     checks = validate_token(
         decoded,
@@ -184,7 +186,7 @@ def _report(
             }
         )
         return
-    if output is Output.CSV:
+    if output in (Output.CSV, Output.TSV):
         render.emit(
             output,
             ["RESULT", "CHECK", "DETAIL"],

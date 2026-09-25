@@ -12,23 +12,18 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any, Self
+from typing import Any
 from urllib.parse import quote
 
-import requests
-
-from libre_devops_helpers.core.auth import TokenProvider, token_source
 from libre_devops_helpers.core.errors import ApiError, InputError, NotFoundError
-from libre_devops_helpers.core.http import ApiClient
 from libre_devops_helpers.core.util import is_guid
-from libre_devops_helpers.microsoft.clouds import PUBLIC
-from libre_devops_helpers.microsoft.config import Profile
+from libre_devops_helpers.microsoft.api_clients import ArmServiceClient
 from libre_devops_helpers.microsoft.logicapps.document import WorkflowDocument
 
 API_VERSION = "2019-05-01"
 _GROUP_API = "2021-04-01"
-_NAME = re.compile(r"^[A-Za-z0-9._()-]{1,90}$")
-_LOCATION = re.compile(r"^[a-z0-9]{2,40}$")
+_NAME = re.compile(r"[A-Za-z0-9._()-]{1,90}")
+_LOCATION = re.compile(r"[a-z0-9]{2,40}")
 
 
 @dataclass(frozen=True)
@@ -42,46 +37,8 @@ class Validation:
     message: str
 
 
-class LogicAppsClient:
+class LogicAppsClient(ArmServiceClient):
     """Reads Consumption Logic App workflows through ARM. Close it when done."""
-
-    def __init__(self, api: ApiClient) -> None:
-        self.api = api
-
-    @classmethod
-    def create(
-        cls,
-        tokens: TokenProvider,
-        tenant_id: str,
-        *,
-        arm_url: str = PUBLIC.arm_url,
-        verify: bool | str = True,
-        session: requests.Session | None = None,
-    ) -> Self:
-        api = ApiClient(
-            arm_url,
-            token_source(tokens, arm_url.rstrip("/") + "/", tenant_id),
-            name="Azure Resource Manager",
-            verify=verify,
-            session=session,
-        )
-        return cls(api)
-
-    @classmethod
-    def for_profile(
-        cls,
-        profile: Profile,
-        tokens: TokenProvider,
-        *,
-        verify: bool | str = True,
-        session: requests.Session | None = None,
-    ) -> Self:
-        return cls.create(
-            tokens, profile.tenant_id, arm_url=profile.cloud.arm_url, verify=verify, session=session
-        )
-
-    def close(self) -> None:
-        self.api.close()
 
     def workflows(self, subscription: str, resource_group: str) -> list[dict[str, Any]]:
         """Every Consumption workflow in the resource group, as ARM returns it."""
@@ -122,7 +79,7 @@ class LogicAppsClient:
     ) -> Validation:
         """Ask the provider whether it would accept ``document``; nothing is deployed."""
         workflow = _name(name or document.name or "ldo-validate-probe")
-        if not _LOCATION.match(location):
+        if not _LOCATION.fullmatch(location):
             raise InputError(f"{location!r} is not an Azure region name, such as uksouth")
         # The body is a workflow resource: the definition, and the parameter VALUES beside
         # it. A declaration with no value is exactly what the provider rejects.
@@ -151,12 +108,12 @@ class LogicAppsClient:
 def _group_path(subscription: str, resource_group: str) -> str:
     if not is_guid(subscription):
         raise InputError(f"{subscription!r} is not a subscription id")
-    if not re.match(r"^[-\w._()]{1,90}$", resource_group) or resource_group.endswith("."):
+    if not re.fullmatch(r"[-\w._()]{1,90}", resource_group) or resource_group.endswith("."):
         raise InputError(f"{resource_group!r} is not a resource group name")
     return f"/subscriptions/{subscription}/resourceGroups/{quote(resource_group)}"
 
 
 def _name(name: str) -> str:
-    if not _NAME.match(name):
+    if not _NAME.fullmatch(name):
         raise InputError(f"{name!r} is not a Logic App workflow name")
     return name

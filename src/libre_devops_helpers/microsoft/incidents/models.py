@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from libre_devops_helpers.core.util import parse_datetime
+from libre_devops_helpers.core import fields
 
 # Graph's serviceSource values, and a short name for each.
 SOURCES = {
@@ -43,15 +43,6 @@ def severity_rank(severity: str) -> int:
         return len(SEVERITY_ORDER)
 
 
-def _text(record: Mapping[str, Any], key: str) -> str:
-    value = record.get(key)
-    return "" if value is None else str(value)
-
-
-def _when(record: Mapping[str, Any], key: str) -> datetime | None:
-    return parse_datetime(record.get(key))
-
-
 @dataclass(frozen=True)
 class IncidentAlert:
     """One alert in an incident."""
@@ -69,16 +60,18 @@ class IncidentAlert:
 
     @property
     def source_name(self) -> str:
+        """The product that raised the alert, by the name the portal gives it."""
         return SOURCES.get(self.source, self.source or "unknown")
 
     @classmethod
     def from_graph(cls, record: Mapping[str, Any]) -> IncidentAlert:
+        """An alert as Graph returns it, with the devices and users named in its evidence."""
         devices: list[str] = []
         users: list[str] = []
         for evidence in record.get("evidence") or ():
             if not isinstance(evidence, Mapping):
                 continue
-            kind = str(evidence.get("@odata.type", ""))
+            kind = fields.text(evidence, "@odata.type")
             if kind.endswith("deviceEvidence"):
                 name = evidence.get("deviceDnsName") or evidence.get("hostName")
                 if name:
@@ -89,13 +82,13 @@ class IncidentAlert:
                 if name:
                     users.append(str(name))
         return cls(
-            id=_text(record, "id"),
-            title=_text(record, "title"),
-            severity=_text(record, "severity"),
-            status=_text(record, "status"),
-            source=_text(record, "serviceSource"),
-            detection_source=_text(record, "detectionSource"),
-            created=_when(record, "createdDateTime"),
+            id=fields.text(record, "id"),
+            title=fields.text(record, "title"),
+            severity=fields.text(record, "severity"),
+            status=fields.text(record, "status"),
+            source=fields.text(record, "serviceSource"),
+            detection_source=fields.text(record, "detectionSource"),
+            created=fields.when(record, "createdDateTime"),
             devices=tuple(dict.fromkeys(devices)),
             users=tuple(dict.fromkeys(users)),
             raw=dict(record),
@@ -122,6 +115,7 @@ class Incident:
 
     @property
     def open(self) -> bool:
+        """Whether the incident is still open (active, in progress, or awaiting action)."""
         return self.status in OPEN_STATUSES
 
     @property
@@ -131,30 +125,34 @@ class Incident:
 
     @property
     def source_names(self) -> tuple[str, ...]:
+        """The products that raised the incident's alerts, by their portal names."""
         return tuple(SOURCES.get(source, source) for source in self.sources)
 
     @property
     def devices(self) -> tuple[str, ...]:
+        """Every device the alerts name, once each, in order."""
         return tuple(dict.fromkeys(name for alert in self.alerts for name in alert.devices))
 
     @property
     def users(self) -> tuple[str, ...]:
+        """Every user the alerts name, once each, in order."""
         return tuple(dict.fromkeys(name for alert in self.alerts for name in alert.users))
 
     @classmethod
     def from_graph(cls, record: Mapping[str, Any]) -> Incident:
+        """An incident as Graph returns it, with its alerts when they were expanded."""
         tags = [*(record.get("customTags") or ()), *(record.get("systemTags") or ())]
         return cls(
-            id=_text(record, "id"),
-            title=_text(record, "displayName"),
-            severity=_text(record, "severity"),
-            status=_text(record, "status"),
-            created=_when(record, "createdDateTime"),
-            updated=_when(record, "lastUpdateDateTime"),
-            assigned_to=_text(record, "assignedTo"),
-            classification=_text(record, "classification"),
-            determination=_text(record, "determination"),
-            web_url=_text(record, "incidentWebUrl"),
+            id=fields.text(record, "id"),
+            title=fields.text(record, "displayName"),
+            severity=fields.text(record, "severity"),
+            status=fields.text(record, "status"),
+            created=fields.when(record, "createdDateTime"),
+            updated=fields.when(record, "lastUpdateDateTime"),
+            assigned_to=fields.text(record, "assignedTo"),
+            classification=fields.text(record, "classification"),
+            determination=fields.text(record, "determination"),
+            web_url=fields.text(record, "incidentWebUrl"),
             tags=tuple(str(tag) for tag in tags),
             alerts=tuple(
                 IncidentAlert.from_graph(alert)

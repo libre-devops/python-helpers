@@ -112,3 +112,25 @@ def test_an_error_in_otlp_mode_is_an_error_record_with_its_hint(monkeypatch, cap
     assert record["body"]["stringValue"].startswith("config file not found")
     attributes = {item["key"]: item["value"]["stringValue"] for item in record["attributes"][2:]}
     assert attributes["hint"] == "create one with 'ldo config init'"
+
+
+@pytest.mark.parametrize("flag", ["--colour", "--color"])
+def test_colour_can_be_asked_for_even_when_piped(flag, tmp_path):
+    config = ["--config", str(tmp_path / "none.toml")]
+    plain = runner.invoke(app, [*config, "welcome"])
+    coloured = runner.invoke(app, [flag, *config, "welcome"])
+    assert "\x1b[" not in plain.stdout
+    assert "\x1b[" in coloured.stdout
+    assert "\x1b[" not in runner.invoke(app, ["--no-color", *config, "welcome"]).stdout
+    assert "\x1b[" in runner.invoke(app, [flag, "json"], input="{}").stdout
+
+
+def test_a_sort_is_for_the_command_it_was_given_to(tmp_path):
+    from libre_devops_helpers.cli import render
+
+    config = ["--config", str(tmp_path / "none.toml")]
+    render.sort_rows(["name:desc"])
+    render.unique_rows(["name"])
+    runner.invoke(app, [*config, "config", "path"])
+    assert render._Mode.order == ()
+    assert render._Mode.distinct == ()

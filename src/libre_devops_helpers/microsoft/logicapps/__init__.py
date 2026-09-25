@@ -44,9 +44,10 @@ from libre_devops_helpers.microsoft.logicapps.document import (
     token_safe_json,
     workflow_name_from,
 )
+from libre_devops_helpers.microsoft.resources import Requirement
 
 # ARM access rests on Azure RBAC (Logic App Reader, or Reader), not token scopes.
-REQUIREMENTS: tuple = ()
+REQUIREMENTS: tuple[Requirement, ...] = ()
 
 __all__ = [
     "API_VERSION",

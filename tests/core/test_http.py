@@ -310,6 +310,23 @@ def test_each_call_goes_through_the_network_rules(monkeypatch):
     assert adapter.sent[1]["proxies"]["https"] == "http://127.0.0.1:3129"
 
 
+def test_a_client_given_its_own_network_settings_ignores_the_processs():
+    from libre_devops_helpers.core import network
+    from libre_devops_helpers.core.network import NetworkSettings
+
+    network.configure(NetworkSettings(proxy="http://process-proxy:8080"))
+    try:
+        ours = NetworkSettings(proxy="http://team-proxy:3128", no_proxy=(".internal",))
+        own, own_adapter, _ = client(lambda request: (200, {}), network_settings=ours)
+        shared, shared_adapter, _ = client(lambda request: (200, {}))
+        own.get("/v1.0/me")
+        shared.get("/v1.0/me")
+    finally:
+        network.configure(NetworkSettings())
+    assert own_adapter.sent[0]["proxies"]["https"] == "http://team-proxy:3128"
+    assert shared_adapter.sent[0]["proxies"]["https"] == "http://process-proxy:8080"
+
+
 def test_a_bundle_the_caller_names_is_used_as_it_is():
     api, adapter, _ = client(lambda request: (200, {}), verify="/etc/corp/bundle.pem")
     api.get("/x")
@@ -319,3 +336,19 @@ def test_a_bundle_the_caller_names_is_used_as_it_is():
 def test_a_session_the_client_makes_ignores_requests_own_environment_reading():
     api = ApiClient(BASE, lambda: "tok")
     assert api._session.trust_env is False
+
+
+def test_a_service_client_closes_the_session_it_was_given_to_own():
+    from libre_devops_helpers.core.http import ServiceClient
+
+    closed = []
+
+    class Api:
+        def close(self):
+            closed.append(True)
+
+    with ServiceClient(Api()) as client:  # a stand-in: only close() is used
+        assert closed == []
+    assert closed == [True]
+    client.close()
+    assert closed == [True, True]

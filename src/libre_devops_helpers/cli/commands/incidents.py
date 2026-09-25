@@ -7,18 +7,31 @@ Every one takes the same window (``--today``, ``--yesterday``, ``--since``, or
 """
 
 from collections.abc import Callable
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Annotated
 
 import typer
 
 from libre_devops_helpers.cli import render
-from libre_devops_helpers.cli.options import OutputOption, ProfileOption, duration, get_runtime
+from libre_devops_helpers.cli.options import (
+    FromOption,
+    OutputOption,
+    ProfileOption,
+    SinceOption,
+    SortOption,
+    TodayOption,
+    ToOption,
+    UniqueOption,
+    YesterdayOption,
+    get_runtime,
+    time_window,
+)
 from libre_devops_helpers.cli.render import Output
-from libre_devops_helpers.core.timewindow import Window, choose_window, last, today_window
+from libre_devops_helpers.core.timewindow import Window, last, today_window
 from libre_devops_helpers.microsoft.incidents import (
     OPEN_STATUSES,
     Incident,
+    IncidentList,
     most_severe,
     newest,
     severities_from,
@@ -60,21 +73,10 @@ _STATUS_LABELS = {"inProgress": "in progress", "awaitingAction": "awaiting actio
 
 
 def register(app: typer.Typer) -> None:
+    """Add the ``incidents`` commands to ``app`` (the ``xdr`` group)."""
     app.add_typer(incidents_app)
 
 
-TodayOption = Annotated[bool, typer.Option("--today", help="Since midnight, local time.")]
-YesterdayOption = Annotated[bool, typer.Option("--yesterday", help="The whole of yesterday.")]
-SinceOption = Annotated[
-    str | None, typer.Option("--since", help="The last span of time, e.g. 6h, 7d.")
-]
-FromOption = Annotated[
-    str | None,
-    typer.Option("--from", help="From this day (YYYY-MM-DD, today or yesterday), whole."),
-]
-ToOption = Annotated[
-    str | None, typer.Option("--to", help="Up to and including this day (YYYY-MM-DD).")
-]
 UpdatedOption = Annotated[
     bool,
     typer.Option("--updated", help="Window on when incidents were last updated, not created."),
@@ -116,12 +118,14 @@ def top(
     source: SourceOption = None,
     limit: LimitOption = 10,
     profile: ProfileOption = None,
+    sort: SortOption = None,
+    unique: UniqueOption = None,
     output: OutputOption = Output.TABLE,
 ) -> None:
     """The most severe open incidents, today unless told otherwise: 10 by default."""
     _show_list(
         ctx,
-        _window(today, yesterday, since, start, end, today_window),
+        time_window(today, yesterday, since, start, end, today_window),
         updated=updated,
         statuses=status or ["open"],
         severity=severity,
@@ -147,12 +151,14 @@ def latest(
     source: SourceOption = None,
     limit: LimitOption = 10,
     profile: ProfileOption = None,
+    sort: SortOption = None,
+    unique: UniqueOption = None,
     output: OutputOption = Output.TABLE,
 ) -> None:
     """The newest incidents of any status, from the last 30 days: 10 by default."""
     _show_list(
         ctx,
-        _window(today, yesterday, since, start, end, lambda now: last(timedelta(days=30), now)),
+        time_window(today, yesterday, since, start, end, lambda now: last(timedelta(days=30), now)),
         updated=updated,
         statuses=status or ["all"],
         severity=severity,
@@ -178,6 +184,8 @@ def list_incidents(
     source: SourceOption = None,
     limit: LimitOption = None,
     profile: ProfileOption = None,
+    sort: SortOption = None,
+    unique: UniqueOption = None,
     output: OutputOption = Output.TABLE,
 ) -> None:
     """Every incident in a window, newest first: the last 24 hours by default.
@@ -187,7 +195,9 @@ def list_incidents(
     """
     _show_list(
         ctx,
-        _window(today, yesterday, since, start, end, lambda now: last(timedelta(hours=24), now)),
+        time_window(
+            today, yesterday, since, start, end, lambda now: last(timedelta(hours=24), now)
+        ),
         updated=updated,
         statuses=status or ["all"],
         severity=severity,
@@ -215,7 +225,7 @@ def summary(
     output: OutputOption = Output.TABLE,
 ) -> None:
     """How many incidents, by severity, status and source: today by default."""
-    window = _window(today, yesterday, since, start, end, today_window)
+    window = time_window(today, yesterday, since, start, end, today_window)
     found = _fetch(ctx, window, updated, status or ["all"], severity, source, profile)
     counts = summarise(found.incidents)
     if output is not Output.TABLE:
@@ -264,80 +274,53 @@ def show(
     """One incident: its alerts, where they came from, the devices and users involved."""
     runtime = get_runtime(ctx).microsoft
     incident = runtime.incidents(runtime.profile(profile)).incident(incident_id)
-    if output is not Output.TABLE:
-        render.emit(
-            output,
-            ["CREATED", "SEVERITY", "SOURCE", "TITLE", "ALERT ID"],
-            [
-                [
-                    render.when(alert.created),
-                    alert.severity,
-                    alert.source_name,
-                    alert.title,
-                    alert.id,
-                ]
-                for alert in incident.alerts
-            ],
-            dict(incident.raw),
-        )
+    if output is Output.TABLE:
+        _print_incident(incident)
         return
-    render.echo(render.title(f"Incident {incident.id}: {incident.title}"))
-    render.echo(
-        render.pairs(
-            [
-                ("Severity", incident.severity),
-                ("Status", _status(incident.status)),
-                ("Created", render.when(incident.created)),
-                ("Updated", render.when(incident.updated)),
-                ("Assigned to", incident.assigned_to or "(nobody)"),
-                ("Classification", incident.classification or "-"),
-                ("Determination", incident.determination or "-"),
-                ("Sources", ", ".join(incident.source_names) or "-"),
-                ("Devices", ", ".join(incident.devices) or "-"),
-                ("Users", ", ".join(incident.users) or "-"),
-                ("Tags", ", ".join(incident.tags) or "-"),
-                ("Link", incident.web_url or "-"),
-            ]
-        )
+    rows = [
+        [render.when(alert.created), alert.severity, alert.source_name, alert.title, alert.id]
+        for alert in incident.alerts
+    ]
+    render.emit(
+        output, ["CREATED", "SEVERITY", "SOURCE", "TITLE", "ALERT ID"], rows, dict(incident.raw)
     )
-    if incident.alerts:
-        render.echo()
-        render.echo(
-            render.table(
-                ["CREATED", "SEVERITY", "STATUS", "SOURCE", "TITLE"],
-                [
-                    [
-                        render.when(alert.created),
-                        (alert.severity, _SEVERITY_COLOURS.get(alert.severity.lower())),
-                        alert.status,
-                        alert.source_name,
-                        alert.title,
-                    ]
-                    for alert in incident.alerts
-                ],
-            )
-        )
+
+
+def _print_incident(incident: Incident) -> None:
+    """The incident's facts, then a table of its alerts."""
+    render.echo(render.title(f"Incident {incident.id}: {incident.title}"))
+    facts = [
+        ("Severity", incident.severity),
+        ("Status", _status(incident.status)),
+        ("Created", render.when(incident.created)),
+        ("Updated", render.when(incident.updated)),
+        ("Assigned to", incident.assigned_to or "(nobody)"),
+        ("Classification", incident.classification or "-"),
+        ("Determination", incident.determination or "-"),
+        ("Sources", ", ".join(incident.source_names) or "-"),
+        ("Devices", ", ".join(incident.devices) or "-"),
+        ("Users", ", ".join(incident.users) or "-"),
+        ("Tags", ", ".join(incident.tags) or "-"),
+        ("Link", incident.web_url or "-"),
+    ]
+    render.echo(render.pairs(facts))
+    if not incident.alerts:
+        return
+    alerts: list[list[render.Cell]] = [
+        [
+            render.when(alert.created),
+            (alert.severity, _SEVERITY_COLOURS.get(alert.severity.lower())),
+            alert.status,
+            alert.source_name,
+            alert.title,
+        ]
+        for alert in incident.alerts
+    ]
+    render.echo()
+    render.echo(render.table(["CREATED", "SEVERITY", "STATUS", "SOURCE", "TITLE"], alerts))
 
 
 # Shared -------------------------------------------------------------------------------
-
-
-def _window(
-    today: bool,
-    yesterday: bool,
-    since: str | None,
-    start: str | None,
-    end: str | None,
-    default: Callable[[datetime], Window],
-) -> Window:
-    return choose_window(
-        today=today,
-        yesterday=yesterday,
-        since=duration(since),
-        start_day=start,
-        end_day=end,
-        default=default,
-    )
 
 
 def _fetch(
@@ -348,7 +331,7 @@ def _fetch(
     severity: str | None,
     sources: list[str] | None,
     profile: str | None,
-):
+) -> IncidentList:
     wanted_statuses: list[str] = []
     for name in statuses:
         key = name.strip().lower()

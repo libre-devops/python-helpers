@@ -11,16 +11,10 @@ from collections import Counter
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Self
 
-import requests
-
-from libre_devops_helpers.core.auth import TokenProvider, token_source
 from libre_devops_helpers.core.errors import ApiError, InputError, NotFoundError
-from libre_devops_helpers.core.http import ApiClient
 from libre_devops_helpers.core.util import odata_datetime, odata_string
-from libre_devops_helpers.microsoft.clouds import PUBLIC
-from libre_devops_helpers.microsoft.config import Profile
+from libre_devops_helpers.microsoft.api_clients import GraphServiceClient
 from libre_devops_helpers.microsoft.incidents.models import (
     SEVERITY_ORDER,
     STATUSES,
@@ -49,62 +43,16 @@ class IncidentList:
 
 @dataclass(frozen=True)
 class Summary:
+    """How many incidents there are, by severity, status and the product that raised them."""
+
     total: int
     by_severity: dict[str, int]
     by_status: dict[str, int]
     by_source: dict[str, int]
 
 
-class IncidentsClient:
+class IncidentsClient(GraphServiceClient):
     """Reads incidents through Microsoft Graph. Close it (or use ``with``) when done."""
-
-    def __init__(self, api: ApiClient) -> None:
-        self.api = api
-
-    @classmethod
-    def create(
-        cls,
-        tokens: TokenProvider,
-        tenant_id: str,
-        *,
-        graph_url: str = PUBLIC.graph_url,
-        verify: bool | str = True,
-        session: requests.Session | None = None,
-    ) -> Self:
-        api = ApiClient(
-            graph_url,
-            token_source(tokens, graph_url, tenant_id),
-            name="Microsoft Graph",
-            verify=verify,
-            session=session,
-        )
-        return cls(api)
-
-    @classmethod
-    def for_profile(
-        cls,
-        profile: Profile,
-        tokens: TokenProvider,
-        *,
-        verify: bool | str = True,
-        session: requests.Session | None = None,
-    ) -> Self:
-        return cls.create(
-            tokens,
-            profile.tenant_id,
-            graph_url=profile.cloud.graph_url,
-            verify=verify,
-            session=session,
-        )
-
-    def close(self) -> None:
-        self.api.close()
-
-    def __enter__(self) -> Self:
-        return self
-
-    def __exit__(self, *exc_info: object) -> None:
-        self.close()
 
     def incidents(
         self,

@@ -1,17 +1,20 @@
 """Options shared by several commands, and access to the per-invocation Runtime."""
 
 import sys
-from datetime import timedelta
+from collections.abc import Callable
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Annotated
 
 import typer
 
+from libre_devops_helpers.cli import render
 from libre_devops_helpers.cli.render import Output
 from libre_devops_helpers.cli.runtime import Runtime
 from libre_devops_helpers.core import brand
 from libre_devops_helpers.core.errors import InputError, LdoError
 from libre_devops_helpers.core.inputs import read_names
+from libre_devops_helpers.core.timewindow import Window, choose_window
 from libre_devops_helpers.core.util import parse_duration
 from libre_devops_helpers.microsoft.config import load_config
 
@@ -89,7 +92,40 @@ ProfileOption = Annotated[
 OutputOption = Annotated[
     Output,
     typer.Option(
-        "--output", "-o", help="table for people, json for scripts, csv for spreadsheets."
+        "--output",
+        "-o",
+        help="table for people, json for scripts, csv for spreadsheets, tsv for shell "
+        "pipelines (no header, as az -o tsv).",
+    ),
+]
+
+# --sort and --unique never reach the command they are on: each hands its value to
+# cli.render as it is parsed (callback, and expose_value=False), and render.emit arranges
+# the rows from there. So a command lists them in its signature, to offer them, and never
+# uses them in its body. They belong on commands that write a list, not one record.
+SortOption = Annotated[
+    list[str] | None,
+    typer.Option(
+        "--sort",
+        help="Sort the rows by a column, named as in the table; add :desc to reverse it. "
+        "Repeat it to sort by more, most significant first. Numbers, versions, severities "
+        "and dates sort as such. Table, CSV and TSV.",
+        callback=render.sort_rows,
+        expose_value=False,
+        show_default=False,
+    ),
+]
+
+UniqueOption = Annotated[
+    list[str] | None,
+    typer.Option(
+        "--unique",
+        help="Keep only the first row for each value of a column, ignoring case; repeat it "
+        "for each combination of several. After --sort, so sorting newest first keeps the "
+        "newest.",
+        callback=render.unique_rows,
+        expose_value=False,
+        show_default=False,
     ),
 ]
 
@@ -144,3 +180,57 @@ DirectOption = Annotated[
     bool,
     typer.Option("--direct", help="Direct memberships only. Default includes nested groups."),
 ]
+
+
+# Advanced Hunting goes through Graph by default; this sends it to Defender for Endpoint's
+# own API, which the Azure CLI's sign-in can use (Graph wants ThreatHunting.Read.All).
+EndpointOption = Annotated[
+    bool,
+    typer.Option(
+        "--endpoint",
+        help="Through the Defender for Endpoint API instead of Graph: device tables only, "
+        "but the Azure CLI's sign-in can use it.",
+    ),
+]
+
+ShowQueryOption = Annotated[
+    bool, typer.Option("--show-query", help="Print the KQL instead of running it.")
+]
+
+# A window of time, for commands about what happened when (see core.timewindow).
+TodayOption = Annotated[bool, typer.Option("--today", help="Since midnight, local time.")]
+YesterdayOption = Annotated[bool, typer.Option("--yesterday", help="The whole of yesterday.")]
+SinceOption = Annotated[
+    str | None, typer.Option("--since", help="The last span of time, e.g. 6h, 7d.")
+]
+FromOption = Annotated[
+    str | None,
+    typer.Option(
+        "--from",
+        help="From this day (YYYY-MM-DD, today or yesterday), whole, or this moment "
+        "(YYYY-MM-DDTHH:MM, local time; end it with Z for UTC).",
+    ),
+]
+ToOption = Annotated[
+    str | None,
+    typer.Option("--to", help="Up to and including this day (YYYY-MM-DD), or up to this moment."),
+]
+
+
+def time_window(
+    today: bool,
+    yesterday: bool,
+    since: str | None,
+    start: str | None,
+    end: str | None,
+    default: Callable[[datetime], Window],
+) -> Window:
+    """The window --today, --yesterday, --since or --from and --to name, else ``default``."""
+    return choose_window(
+        today=today,
+        yesterday=yesterday,
+        since=duration(since),
+        start=start,
+        end=end,
+        default=default,
+    )

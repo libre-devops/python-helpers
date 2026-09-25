@@ -7,6 +7,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
+from libre_devops_helpers.core import fields
+
 # glide-yokohama-12-18-2024__patch4-06-25-2025 (glide.buildtag.last), or the same with a
 # .zip suffix (glide.war), for example.
 _BUILD_TAG = re.compile(
@@ -16,11 +18,6 @@ _BUILD_TAG = re.compile(
 
 def _flag(value: object) -> bool:
     return str(value).strip().lower() in {"true", "1", "active", "yes"}
-
-
-def _text(record: Mapping[str, Any], key: str) -> str:
-    value = record.get(key)
-    return "" if value is None else str(value)
 
 
 @dataclass(frozen=True)
@@ -50,15 +47,16 @@ class User:
 
     @classmethod
     def from_record(cls, record: Mapping[str, Any]) -> User:
+        """A user as the Table API returns it."""
         return cls(
-            sys_id=_text(record, "sys_id"),
-            user_name=_text(record, "user_name"),
-            name=_text(record, "name"),
-            email=_text(record, "email"),
+            sys_id=fields.text(record, "sys_id"),
+            user_name=fields.text(record, "user_name"),
+            name=fields.text(record, "name"),
+            email=fields.text(record, "email"),
             active=_flag(record.get("active")),
             locked_out=_flag(record.get("locked_out")),
             web_service_only=_flag(record.get("web_service_access_only")),
-            last_login=_text(record, "last_login_time"),
+            last_login=fields.text(record, "last_login_time"),
             raw=dict(record),
         )
 
@@ -74,6 +72,8 @@ class Release:
 
     @classmethod
     def from_build_tag(cls, tag: str) -> Release:
+        """A release from a build tag such as ``glide-zurich-07-01-2025__patch4``; a tag of another
+        shape is kept as it is."""
         match = _BUILD_TAG.match(tag.strip())
         if not match:
             return cls(build_tag=tag)
@@ -86,6 +86,7 @@ class Release:
 
     @property
     def label(self) -> str:
+        """The release as people say it (``Zurich patch4``), else its build tag."""
         if not self.family:
             return self.build_tag or "unknown"
         return f"{self.family} {self.patch}".strip()
@@ -111,11 +112,12 @@ class Application:
 
     @classmethod
     def from_record(cls, record: Mapping[str, Any]) -> Application:
+        """An installed application as the Table API returns it: a store app or a custom one."""
         return cls(
-            scope=_text(record, "scope"),
-            name=_text(record, "name"),
+            scope=fields.text(record, "scope"),
+            name=fields.text(record, "name"),
             active=_flag(record.get("active")),
-            version=_text(record, "version"),
+            version=fields.text(record, "version"),
             kind="store app" if record.get("sys_class_name") == "sys_store_app" else "custom app",
             raw=dict(record),
         )

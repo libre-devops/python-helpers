@@ -60,12 +60,19 @@ ldo = "libre_devops_helpers.cli:main"
 
 [dependency-groups]
 dev = [
+    "mypy>=1.18",
     "pytest>=8",
     "pytest-cov>=6",
     # Tests only: reads back the YAML that core/yaml_text.py writes, to prove it round-trips.
     "pyyaml>=6",
     "ruff>=0.6",
     "rust-just>=1.30",
+    # Tests only: a throwaway certificate authority, for real TLS servers and proxies in
+    # tests/core/test_probe.py.
+    "trustme>=1.2",
+    # Tests only: exported custom detection rules are checked against the Terraform
+    # module's own JSON schema (tests/fakes/schemas).
+    "jsonschema>=4.23",
 ]
 
 [build-system]
@@ -94,7 +101,39 @@ target-version = "py311"
 src = ["src", "tests"]
 
 [tool.ruff.lint]
-select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF", "PT"]
+select = [
+    "E", "W", "F", "I", "B", "UP", "SIM", "RUF", "PT",
+    "C90",  # complexity: see max-complexity below
+    "S",  # security (bandit's rules)
+    # A docstring on every public module, class, method and function: say what it gives.
+    "D100", "D101", "D102", "D103", "D104",
+]
+ignore = [
+    # S105 to S107 flag any string given to a name like "token" or "secret". Here those
+    # are names of settings and environment variables; gitleaks scans for real secrets.
+    "S105",
+    "S106",
+    "S107",
+]
+
+[tool.ruff.lint.mccabe]
+# Past ten paths through it, a function no longer fits in a reader's head: split it.
+max-complexity = 10
+
+[tool.ruff.lint.per-file-ignores]
+# Tests assert, run the tools they test, pick random inputs, and name made-up paths that
+# are never written to. A fake API is a routing table, read top to bottom, so the
+# complexity limit is for the package, not its fakes.
+"tests/**" = ["S101", "S108", "S311", "S603", "C901", "D1"]
+# The scripts run the project's own tools (uv, git), with arguments they build themselves.
+"scripts/**" = ["S603"]
+
+[tool.mypy]
+# Type hints are checked, not only read: strictly, on the package. The tests are checked
+# by running them.
+files = ["src"]
+python_version = "3.11"
+strict = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

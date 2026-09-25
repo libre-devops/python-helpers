@@ -7,6 +7,9 @@ accept any provider, so none of them depends on where a token comes from.
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import secrets
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -15,7 +18,39 @@ from typing import Protocol
 
 
 def utc_now() -> datetime:
+    """Now, in UTC."""
     return datetime.now(UTC)
+
+
+@dataclass(frozen=True)
+class Pkce:
+    """Proof key for a browser sign-in (RFC 7636), so a stolen authorisation code is useless.
+
+    The ``challenge`` goes in the link the person opens; the ``verifier``, kept here, goes
+    with the code when it is redeemed, and only whoever made the challenge has it. ``state``
+    comes back with the code, proving the answer is to this sign-in and no other.
+    """
+
+    verifier: str = field(repr=False)
+    challenge: str
+    state: str = field(repr=False)
+
+    @classmethod
+    def new(cls) -> Pkce:
+        """A fresh verifier, its challenge and a state, for one sign-in."""
+        verifier = secrets.token_urlsafe(64)
+        digest = hashlib.sha256(verifier.encode("ascii")).digest()
+        challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+        return cls(verifier, challenge, secrets.token_urlsafe(24))
+
+    @property
+    def parameters(self) -> dict[str, str]:
+        """What the authorisation link carries: the challenge, its method and the state."""
+        return {
+            "code_challenge": self.challenge,
+            "code_challenge_method": "S256",
+            "state": self.state,
+        }
 
 
 @dataclass(frozen=True)
@@ -60,6 +95,8 @@ class CachingTokenProvider:
         self._lock = threading.Lock()
 
     def get_token(self, resource: str, tenant_id: str) -> AccessToken:
+        """A cached token for ``resource`` and ``tenant_id``, or a new one when it is about to
+        expire."""
         key = (resource, tenant_id.lower())
         with self._lock:
             cached = self._cache.get(key)
@@ -90,9 +127,11 @@ class BearerToken:
         return f"BearerToken(resource={self._resource!r}, tenant_id={self._tenant_id!r})"
 
     def __call__(self) -> str:
+        """The token itself, for an Authorization header."""
         return self._provider.get_token(self._resource, self._tenant_id).token
 
     def refresh(self) -> None:
+        """Drop the cached token, so the next call gets a new one (after a 401)."""
         invalidate = getattr(self._provider, "invalidate", None)
         if callable(invalidate):
             invalidate(self._resource, self._tenant_id)

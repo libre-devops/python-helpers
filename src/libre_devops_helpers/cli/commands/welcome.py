@@ -10,6 +10,7 @@ from libre_devops_helpers.core.config import default_config_path
 
 
 def register(app: typer.Typer) -> None:
+    """Add the ``welcome`` command to ``app``."""
     app.command("welcome")(welcome)
 
 

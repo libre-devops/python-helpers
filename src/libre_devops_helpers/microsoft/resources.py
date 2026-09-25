@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from libre_devops_helpers.core.errors import LdoError
+from libre_devops_helpers.core.errors import InputError
 from libre_devops_helpers.microsoft.clouds import PUBLIC, Cloud
 
 # First-party application ids. They are the same in every cloud, and a token may carry
@@ -131,7 +131,7 @@ def resolve_resource(value: str, cloud: Cloud = PUBLIC) -> Resource:
             if audience in resource.audiences:
                 return resource
         return Resource(key=key, url=key, audiences=frozenset({audience}))
-    raise LdoError(
+    raise InputError(
         f"unknown resource {value!r}",
         hint=f"use one of {', '.join(sorted(known))}, or an https:// resource URL",
     )

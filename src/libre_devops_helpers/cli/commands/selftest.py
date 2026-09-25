@@ -24,7 +24,12 @@ from typing import Annotated, Any
 import typer
 
 from libre_devops_helpers.cli import render
-from libre_devops_helpers.cli.options import OutputOption, get_runtime
+from libre_devops_helpers.cli.options import (
+    OutputOption,
+    SortOption,
+    UniqueOption,
+    get_runtime,
+)
 from libre_devops_helpers.cli.render import Output
 from libre_devops_helpers.core import brand
 from libre_devops_helpers.core.errors import LdoError
@@ -47,6 +52,9 @@ class Case:
 
 @dataclass
 class Outcome:
+    """What one command did: its result (ok, attention, refused, usage or CRASH), its exit code and
+    time, and for a failure, what it said and the lines of the package it came through."""
+
     command: str
     result: str
     exit_code: int | None
@@ -79,8 +87,19 @@ CASES = (
     Case(("entra", "device-groups", "{device}"), ("device",)),
     Case(("xdr", "machines", "{device}"), ("device",)),
     Case(("xdr", "machines", "{short}"), ("device",)),
+    Case(
+        ("xdr", "machines", "{short}", "--sort", "last seen:desc", "--unique", "device"),
+        ("device",),
+    ),
     Case(("xdr", "alerts", "--device", "{device}", "--include-resolved"), ("device",)),
     Case(("xdr", "vulns", "{device}"), ("device",)),
+    Case(("xdr", "timeline", "{device}", "--since", "1h", "--endpoint"), ("device",)),
+    Case(
+        ("xdr", "timeline", "{device}", "--since", "1h", "--type", "process,network"), ("device",)
+    ),
+    Case(
+        ("xdr", "vulns", "{device}", "--sort", "severity:desc", "--sort", "cvss:desc"), ("device",)
+    ),
     Case(("devices", "check", "{device}"), ("device",)),
     Case(("devices", "show", "{device}"), ("device",)),
     Case(("devices", "av-signature", "{device}", "--endpoint"), ("device",)),
@@ -96,7 +115,9 @@ CASES = (
     Case(("entra", "sign-ins", "--user", "{user}", "--since", "7d", "--limit", "5"), ("user",)),
     Case(("azure", "rbac", "{user}"), ("user",), slow=True),
     Case(("xdr", "alerts", "--since", "24h", "--limit", "5")),
+    Case(("xdr", "alerts", "--since", "7d", "--sort", "severity:desc", "--unique", "title")),
     Case(("xdr", "indicators")),
+    Case(("xdr", "detections", "list")),
     Case(("xdr", "stale", "--older-than", "180d"), slow=True),
     Case(("xdr", "hunt", "DeviceInfo | take 1", "--endpoint")),
     Case(("xdr", "hunt", "DeviceInfo | take 1")),
@@ -110,6 +131,7 @@ CASES = (
     Case(("azure", "automation", "accounts")),
     Case(("keyvault", "expiry", "--all-vaults", "--within", "30d"), slow=True),
     Case(("logs", "query", "Heartbeat | take 1", "--workspace", "{workspace}"), ("workspace",)),
+    Case(("logs", "ingestion", "--workspace", "{workspace}"), ("workspace",)),
     Case(("pim", "eligible", "--azure")),
     Case(("pim", "active", "--azure")),
     Case(("pim", "eligible")),
@@ -119,6 +141,7 @@ CASES = (
 
 
 def register(app: typer.Typer) -> None:
+    """Add the hidden ``self-test`` command to ``app``."""
     app.command("self-test", hidden=True)(self_test)
 
 
@@ -151,6 +174,8 @@ def self_test(
         Path | None,
         typer.Option("--report", help="Also write every outcome, and where each crash was, here."),
     ] = None,
+    sort: SortOption = None,
+    unique: UniqueOption = None,
     output: OutputOption = Output.TABLE,
 ) -> None:
     """Run every read-only command against the names given, and report what broke.
@@ -189,7 +214,8 @@ def self_test(
             outcome = _run(list(args), stdin, config_path, profile)
             outcomes.append(outcome)
             render.note(
-                f"{number}/{len(runs)} {outcome.result:<9} {brand.COMMAND} {outcome.command}"
+                f"{number:>{len(str(len(runs)))}}/{len(runs)}  {outcome.result:<9}  "
+                f"{brand.COMMAND} {outcome.command}"
             )
     except KeyboardInterrupt:
         render.warn(f"stopped after {len(outcomes)} of {len(runs)}")

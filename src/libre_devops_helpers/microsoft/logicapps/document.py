@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from libre_devops_helpers.core import fields
 from libre_devops_helpers.core.errors import InputError
 
 TOKEN_MARK = "TFTPL_TOKEN"  # what an unrendered ${...} becomes, so the text parses
@@ -48,13 +49,13 @@ class WorkflowDocument:
 
     @property
     def triggers(self) -> Mapping[str, Any]:
-        value = self.definition.get("triggers")
-        return value if isinstance(value, Mapping) else {}
+        """The definition's triggers by name; empty when it has none."""
+        return fields.mapping(self.definition.get("triggers"))
 
     @property
     def actions(self) -> Mapping[str, Any]:
-        value = self.definition.get("actions")
-        return value if isinstance(value, Mapping) else {}
+        """The definition's actions by name; empty when it has none."""
+        return fields.mapping(self.definition.get("actions"))
 
 
 @dataclass(frozen=True)

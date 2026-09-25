@@ -24,6 +24,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from libre_devops_helpers.core import fields
 from libre_devops_helpers.core.errors import InputError
 from libre_devops_helpers.microsoft.logicapps.document import WorkflowDocument, action_nodes
 
@@ -71,6 +72,7 @@ class Connection:
 
     @property
     def managed_identity(self) -> bool:
+        """Whether the connection signs in as the Logic App's managed identity."""
         return self.authentication == "ManagedServiceIdentity"
 
 
@@ -122,8 +124,8 @@ def parameter_status(
     declarations = document.declarations or {}
     values = document.parameter_values or {}
     found = []
-    for name, declaration in declarations.items():
-        declaration = declaration if isinstance(declaration, Mapping) else {}
+    for name, declared in declarations.items():
+        declaration = fields.mapping(declared)
         kind = declaration.get("type") if isinstance(declaration.get("type"), str) else None
         secure = kind in SECURE_TYPES
         in_wrapper = name in values
@@ -182,57 +184,88 @@ def check(
     Warnings (it deploys, then surprises you): no triggers; no actions; a
     ``$connections`` declaration with nothing wired to it.
     """
-    findings: list[Finding] = []
+    found = [
+        *_parameter_findings(document, supplied),
+        *_connection_findings(document, connections),
+        *_shape_findings(document, callback_trigger),
+    ]
+    findings = [
+        Finding(document.name, severity, rule, message, document.source)
+        for severity, rule, message in found
+    ]
+    return sorted(findings, key=lambda finding: finding.severity != "error")
 
-    def add(severity: str, rule: str, message: str) -> None:
-        findings.append(Finding(document.name, severity, rule, message, document.source))
 
-    for status in parameter_status(document, supplied):
-        if not status.satisfied:
-            add(
-                "error",
-                "parameter-has-no-value",
-                f"parameter {status.name!r} ({status.type}) has no value: {status.reason}",
-            )
-    declared = set(document.declarations or {})
-    for name in supplied:
-        if name not in declared:
-            add(
-                "error",
-                "supplied-parameter-not-declared",
-                f"parameter {name!r} is supplied but not declared: the definition is the "
-                "contract, and values only fill it",
-            )
-    if connections and CONNECTIONS not in declared:
-        add(
+# Each rule gives (severity, rule, message); ``check`` puts the document's name on them.
+_Found = tuple[str, str, str]
+
+
+def _parameter_findings(document: WorkflowDocument, supplied: Sequence[str]) -> list[_Found]:
+    """Parameters with no value, and values for parameters the definition never declares."""
+    found = [
+        (
             "error",
-            "connections-not-declared",
+            "parameter-has-no-value",
+            f"parameter {status.name!r} ({status.type}) has no value: {status.reason}",
+        )
+        for status in parameter_status(document, supplied)
+        if not status.satisfied
+    ]
+    declared = set(document.declarations or {})
+    found += [
+        (
+            "error",
+            "supplied-parameter-not-declared",
+            f"parameter {name!r} is supplied but not declared: the definition is the "
+            "contract, and values only fill it",
+        )
+        for name in supplied
+        if name not in declared
+    ]
+    return found
+
+
+def _connection_findings(document: WorkflowDocument, connections: Sequence[str]) -> list[_Found]:
+    """Connections wired with nowhere to go, or a ``$connections`` with nothing wired."""
+    declared = CONNECTIONS in set(document.declarations or {})
+    if connections and not declared:
+        message = (
             f"{len(connections)} connection(s) are wired, but the definition declares no "
-            "$connections parameter",
+            "$connections parameter"
         )
-    if not connections and CONNECTIONS in declared:
-        add(
-            "warning",
-            "connections-unwired",
-            "the definition declares $connections, but no connections are wired to it",
-        )
+        return [("error", "connections-not-declared", message)]
+    if not connections and declared:
+        message = "the definition declares $connections, but no connections are wired to it"
+        return [("warning", "connections-unwired", message)]
+    return []
+
+
+def _shape_findings(document: WorkflowDocument, callback_trigger: str | None) -> list[_Found]:
+    """No triggers, a callback trigger that is not there, or no actions."""
+    found: list[_Found] = []
     triggers = list(document.triggers)
     if not triggers:
-        add("warning", "no-trigger", "the definition has no triggers, so nothing can start it")
+        found.append(
+            ("warning", "no-trigger", "the definition has no triggers, so nothing can start it")
+        )
     if callback_trigger is not None and callback_trigger not in triggers:
-        add(
-            "error",
-            "callback-trigger-not-found",
-            f"callback trigger {callback_trigger!r} is not in the definition "
-            f"(triggers: {', '.join(triggers) or 'none'})",
+        found.append(
+            (
+                "error",
+                "callback-trigger-not-found",
+                f"callback trigger {callback_trigger!r} is not in the definition "
+                f"(triggers: {', '.join(triggers) or 'none'})",
+            )
         )
     if not document.actions:
-        add(
-            "warning",
-            "no-actions",
-            "the definition has no actions, so it does nothing when it runs",
+        found.append(
+            (
+                "warning",
+                "no-actions",
+                "the definition has no actions, so it does nothing when it runs",
+            )
         )
-    return sorted(findings, key=lambda finding: finding.severity != "error")
+    return found
 
 
 def connections_of(document: WorkflowDocument) -> list[Connection]:
@@ -242,10 +275,10 @@ def connections_of(document: WorkflowDocument) -> list[Connection]:
     if not isinstance(value, Mapping):
         return []
     found = []
-    for key, detail in value.items():
-        detail = detail if isinstance(detail, Mapping) else {}
-        authentication = (detail.get("connectionProperties") or {}).get("authentication") or {}
-        kind = authentication.get("type") if isinstance(authentication, Mapping) else None
+    for key, entry in value.items():
+        detail = fields.mapping(entry)
+        properties = fields.mapping(detail.get("connectionProperties"))
+        kind = fields.mapping(properties.get("authentication")).get("type")
         found.append(
             Connection(
                 workflow=document.name,

@@ -1,11 +1,6 @@
-import socket
-import ssl
-
 import pytest
-import requests
 
-from fakes.certificates import TEST_CA
-from libre_devops_helpers.core import network, trust
+from libre_devops_helpers.core import network
 from libre_devops_helpers.core.errors import ConfigError
 from libre_devops_helpers.core.network import NetworkSettings, Route
 
@@ -131,106 +126,30 @@ def test_the_azure_cli_gets_the_same_proxy_and_bundle(monkeypatch):
     assert "REQUESTS_CA_BUNDLE" not in network.subprocess_env({"REQUESTS_CA_BUNDLE": "/x.pem"})
 
 
-class FakeSession:
-    def __init__(self, outcome):
-        self.outcome = outcome
-        self.calls = []
-
-    def get(self, url, **kwargs):
-        self.calls.append(kwargs)
-        if isinstance(self.outcome, Exception):
-            raise self.outcome
-        response = requests.Response()
-        response.status_code = self.outcome
-        return response
-
-
-def probe(outcome, **options):
-    return network.probe(
-        "https://graph.microsoft.com/v1.0/",
-        session=FakeSession(outcome),
-        issuer=lambda host, port, proxy: "Contoso Inspection CA",
-        listening=lambda: options.get("listening"),
-        **{key: value for key, value in options.items() if key != "listening"},
-    )
+@pytest.mark.parametrize(
+    ("address", "shown"),
+    [
+        ("http://alice:s3cret@proxy.corp.example:8080", "http://alice:***@proxy.corp.example:8080"),
+        ("http://CORP%5Calice:p%40ss@[::1]:3128", "http://CORP%5Calice:***@[::1]:3128"),
+        ("http://alice@proxy.corp.example:8080", "http://alice@proxy.corp.example:8080"),
+        ("http://127.0.0.1:3129", "http://127.0.0.1:3129"),
+        (None, None),
+        ("", ""),
+    ],
+)
+def test_a_proxy_password_is_redacted_for_showing(address, shown):
+    assert network.redact(address) == shown
 
 
-def test_a_2xx_is_a_pass_and_anything_else_is_named():
-    assert probe(200).ok
-    assert probe(401).ok is False
-    assert probe(401, expect=(200, 401)).ok
-    assert probe(404).detail == "HTTP 404"
+def test_a_route_never_shows_its_password():
+    route = Route("http://alice:s3cret@proxy.corp.example:8080", "HTTPS_PROXY")
+    assert route.shown == "http://alice:***@proxy.corp.example:8080"
+    assert "s3cret" not in repr(route)
+    assert route.proxy == "http://alice:s3cret@proxy.corp.example:8080"  # still used as it is
 
 
-def test_a_tls_failure_names_the_issuer_and_how_to_trust_it(monkeypatch):
-    monkeypatch.setattr(network, "ca_bundle", lambda: trust.Bundle("/cache/ca-bundle.pem", None))
-    error = requests.exceptions.SSLError("certificate verify failed: self-signed certificate")
-    result = probe(error)
-    assert result.detail == (
-        "TLS: self-signed certificate; the certificate is issued by Contoso Inspection CA"
-    )
-    assert "ca_bundle" in (result.hint or "")
-
-
-def test_a_tls_failure_with_an_explicit_bundle_says_to_add_the_root_or_unset_it(monkeypatch):
-    result = probe(requests.exceptions.SSLError("unable to get local issuer certificate"))
-    assert "LDO_CA_BUNDLE names" in (result.hint or "")  # the tests' own explicit bundle
-
-
-def test_a_proxy_that_wants_ntlm_points_at_cntlm(monkeypatch):
-    result = probe(requests.exceptions.ProxyError("Tunnel connection failed: 407 Proxy Auth"))
-    assert (result.status, result.ok) == (407, False)
-    assert "run cntlm or Px" in (result.hint or "")
-    monkeypatch.setenv("LDO_PROXY_ADDRESS", "127.0.0.1:3129")
-    local = probe(407)
-    assert "could not sign in to the corporate proxy" in (local.hint or "")
-
-
-def test_a_proxy_that_is_not_there_is_named(monkeypatch):
-    monkeypatch.setenv("LDO_PROXY_ADDRESS", "127.0.0.1:3129")
-    result = probe(requests.exceptions.ProxyError("Cannot connect to proxy"))
-    assert result.detail == "cannot reach the proxy http://127.0.0.1:3129"
-
-
-def test_no_way_out_suggests_a_local_proxy_that_is_listening():
-    lost = probe(requests.exceptions.ConnectTimeout("timed out"))
-    assert lost.detail == "timed out"
-    assert "may need a proxy" in (lost.hint or "")
-    found = probe(requests.exceptions.ConnectionError("refused"), listening="127.0.0.1:3129")
-    assert found.hint == (
-        "something is listening on 127.0.0.1:3129, like cntlm or Px: "
-        "try LDO_PROXY_ADDRESS=127.0.0.1:3129"
-    )
-
-
-def test_a_probe_follows_the_same_proxy_and_bundle_as_every_call(monkeypatch):
-    monkeypatch.setenv("LDO_PROXY_ADDRESS", "127.0.0.1:3129")
-    session = FakeSession(200)
-    network.probe(GRAPH, session=session)
-    sent = session.calls[0]
-    assert sent["proxies"] == {"http": "http://127.0.0.1:3129", "https": "http://127.0.0.1:3129"}
-    assert sent["verify"] == network.ca_bundle().path
-    assert sent["allow_redirects"] is False
-
-
-def test_the_issuer_is_read_from_the_certificate():
-    der = ssl.PEM_cert_to_DER_cert(TEST_CA)
-    assert network.issuer_name(der) == "Contoso Test Inspection CA"
-    assert network.issuer_name(b"\x30\x03\x02\x01") is None
-
-
-def test_a_local_listener_is_found_on_the_ports_cntlm_and_px_use():
-    with socket.socket() as server:
-        server.bind(("127.0.0.1", 0))
-        server.listen(1)
-        port = server.getsockname()[1]
-        assert network.local_proxy_listening((port,)) == f"127.0.0.1:{port}"
-    assert network.local_proxy_listening((port,)) is None
-
-
-def test_an_issuer_that_cannot_be_read_is_none():
-    with socket.socket() as spare:
-        spare.bind(("127.0.0.1", 0))
-        closed = spare.getsockname()[1]
-    assert network.peer_issuer("127.0.0.1", closed, None, timeout=1) is None
-    assert network.peer_issuer("example.com", 443, "https://proxy:443") is None
+def test_a_bad_proxy_address_is_refused_without_its_password():
+    with pytest.raises(ConfigError) as caught:
+        network.normalise_proxy("alice:s3cret@proxy.corp.example:port", "HTTPS_PROXY")
+    assert "s3cret" not in str(caught.value)
+    assert "alice:***@" in str(caught.value)

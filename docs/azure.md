@@ -59,3 +59,22 @@ ldo logs query --file queries/sign-ins.kql --workspace <workspace id> -o csv
 
 Without `--workspace`, the profile's `workspace_id` is used. A Sentinel workspace is a Log
 Analytics workspace, so this reads its tables too.
+
+### Which tables are receiving data
+
+```bash
+ldo logs ingestion                          # the last 30 days: quiet tables first
+ldo logs ingestion --quiet-after 6h         # flag a table silent for over six hours
+ldo logs ingestion --window 90d -o csv > ingestion.csv
+```
+
+For each table: when it last received data, how long it has been quiet, and how many GB (and
+billable GB) it took in, with the solutions that send it. A data source that stopped sending
+shows up here first, quiet at the top, and the command exits 3.
+
+It reads the workspace's `Usage` table, not the tables themselves, so it is cheap to run and
+accurate to the hour. That has two limits: a table that received nothing in the whole window
+is not listed at all (nothing says it exists, which is why the window defaults to 30 days),
+and `Usage` arrives a little behind, so being quiet for under a couple of hours means nothing.
+It goes through the Log Analytics query API, as `logs query` does, and needs only Log
+Analytics Reader on the workspace.

@@ -1,26 +1,39 @@
 """The profiles command: every profile the config file defines, for every vendor."""
 
+from dataclasses import dataclass
 from typing import Any
 
 import typer
 
 from libre_devops_helpers.cli import render
-from libre_devops_helpers.cli.options import OutputOption, get_runtime
+from libre_devops_helpers.cli.options import (
+    OutputOption,
+    SortOption,
+    UniqueOption,
+    get_runtime,
+)
 from libre_devops_helpers.cli.render import Output
 from libre_devops_helpers.cli.runtime import Runtime
 from libre_devops_helpers.core import brand
 from libre_devops_helpers.core.errors import LdoError
 from libre_devops_helpers.microsoft.azcli import find_account, match_profile
+from libre_devops_helpers.microsoft.config import Profile
 from libre_devops_helpers.microsoft.process import AzCliError
 from libre_devops_helpers.servicenow import OAuthCredential
 from libre_devops_helpers.servicenow import Profile as ServiceNowProfile
 
 
 def register(app: typer.Typer) -> None:
+    """Add the ``profiles`` command to ``app``."""
     app.command("profiles")(profiles)
 
 
-def profiles(ctx: typer.Context, output: OutputOption = Output.TABLE) -> None:
+def profiles(
+    ctx: typer.Context,
+    sort: SortOption = None,
+    unique: UniqueOption = None,
+    output: OutputOption = Output.TABLE,
+) -> None:
     """List configured profiles, which is active, and whether each can sign in."""
     runtime = get_runtime(ctx)
     runtime.config_file()
@@ -50,50 +63,65 @@ def _microsoft(runtime: Runtime) -> tuple[list[list[render.Cell]], list[dict[str
         accounts = None
     active_account = next((account for account in accounts or [] if account.is_default), None)
     active = match_profile(config.profiles.values(), active_account) if active_account else None
-
     rows: list[list[render.Cell]] = []
     records: list[dict[str, Any]] = []
     for profile in config.profiles.values():
-        signed_in = None if accounts is None else find_account(accounts, profile) is not None
-        is_active = active is not None and profile.name == active.name
-        is_default = profile.name == config.default_profile
-        records.append(
-            {
-                "vendor": "microsoft",
-                "name": profile.name,
-                "kind": profile.kind,
-                "tenant_id": profile.tenant_id,
-                "subscription_id": profile.subscription_id,
-                "cloud": profile.cloud.name,
-                "auth": profile.auth,
-                "description": profile.description,
-                "default": is_default,
-                "active": is_active,
-                "signed_in": signed_in,
-            }
+        state = _State(
+            default=profile.name == config.default_profile,
+            active=active is not None and profile.name == active.name,
+            signed_in=None if accounts is None else find_account(accounts, profile) is not None,
         )
-        target = (
-            f"subscription {profile.subscription_id}"
-            if profile.subscription_id
-            else f"tenant {profile.tenant_id}"
-        )
-        if profile.cloud.name != "public":
-            target += f" ({profile.cloud.name})"
-        rows.append(
-            [
-                "microsoft",
-                ("*", "green") if is_active else " ",
-                profile.name + (" (default)" if is_default else ""),
-                target,
-                profile.auth,
-                _signed_in_cell(profile.auth, signed_in),
-                profile.description,
-            ]
-        )
+        rows.append(_microsoft_row(profile, state))
+        records.append(_microsoft_record(profile, state))
     placeholders = [p.name for p in config.profiles.values() if p.has_placeholder_ids]
     if placeholders:
         render.warn(f"placeholder ids in {', '.join(placeholders)}; edit {config.path}")
     return rows, records
+
+
+@dataclass(frozen=True)
+class _State:
+    """How a Microsoft profile stands: the config's default, the Azure CLI's active
+    account, and signed in to the Azure CLI (None when that could not be read)."""
+
+    default: bool
+    active: bool
+    signed_in: bool | None
+
+
+def _microsoft_row(profile: Profile, state: _State) -> list[render.Cell]:
+    target = (
+        f"subscription {profile.subscription_id}"
+        if profile.subscription_id
+        else f"tenant {profile.tenant_id}"
+    )
+    if profile.cloud.name != "public":
+        target += f" ({profile.cloud.name})"
+    return [
+        "microsoft",
+        ("*", "green") if state.active else " ",
+        profile.name + (" (default)" if state.default else ""),
+        target,
+        profile.auth,
+        _signed_in_cell(profile.auth, state.signed_in),
+        profile.description,
+    ]
+
+
+def _microsoft_record(profile: Profile, state: _State) -> dict[str, Any]:
+    return {
+        "vendor": "microsoft",
+        "name": profile.name,
+        "kind": profile.kind,
+        "tenant_id": profile.tenant_id,
+        "subscription_id": profile.subscription_id,
+        "cloud": profile.cloud.name,
+        "auth": profile.auth,
+        "description": profile.description,
+        "default": state.default,
+        "active": state.active,
+        "signed_in": state.signed_in,
+    }
 
 
 def _servicenow(runtime: Runtime) -> tuple[list[list[render.Cell]], list[dict[str, Any]]]:

@@ -78,37 +78,57 @@ def credential_for(
         )
 
     if profile.auth == "client-secret":
-        secret = environ.get(SECRET_VARIABLE, "")
-        if not secret:
-            raise AuthError(
-                f"profile {profile.name!r} needs a client secret",
-                hint=f"set {SECRET_VARIABLE}; the config file never holds secrets",
-            )
         return ClientSecretCredential(
-            client_id, secret, login_url=login_url, session=session, verify=verify
+            client_id,
+            _client_secret(profile, environ),
+            login_url=login_url,
+            session=session,
+            verify=verify,
         )
-
     if profile.auth == "workload-identity":
-        token_file = environ.get(TOKEN_FILE_VARIABLE)
-        if token_file:
-            assertion = federated_token_file(Path(token_file))
-        elif environ.get(GITHUB_URL_VARIABLE) and environ.get(GITHUB_TOKEN_VARIABLE):
-            assertion = github_actions_assertion(
-                environ[GITHUB_URL_VARIABLE],
-                environ[GITHUB_TOKEN_VARIABLE],
-                session=session,
-                verify=verify,
-            )
-        else:
-            raise AuthError(
-                f"profile {profile.name!r} has no federated token to exchange",
-                hint=(
-                    f"set {TOKEN_FILE_VARIABLE}, or run in GitHub Actions with "
-                    "'permissions: id-token: write'"
-                ),
-            )
         return WorkloadIdentityCredential(
-            client_id, assertion, login_url=login_url, session=session, verify=verify
+            client_id,
+            _federated_assertion(profile, environ, session, verify),
+            login_url=login_url,
+            session=session,
+            verify=verify,
         )
-
     raise AuthError(f"profile {profile.name!r} has an unknown auth method {profile.auth!r}")
+
+
+def _client_secret(profile: Profile, environ: Mapping[str, str]) -> str:
+    """The secret from the environment: the config file never holds one."""
+    secret = environ.get(SECRET_VARIABLE, "")
+    if not secret:
+        raise AuthError(
+            f"profile {profile.name!r} needs a client secret",
+            hint=f"set {SECRET_VARIABLE}; the config file never holds secrets",
+        )
+    return secret
+
+
+def _federated_assertion(
+    profile: Profile,
+    environ: Mapping[str, str],
+    session: requests.Session | None,
+    verify: bool | str,
+) -> Callable[[], str]:
+    """Where the federated token comes from: a file (Kubernetes and most CI), else
+    GitHub Actions' own token endpoint."""
+    token_file = environ.get(TOKEN_FILE_VARIABLE)
+    if token_file:
+        return federated_token_file(Path(token_file))
+    if environ.get(GITHUB_URL_VARIABLE) and environ.get(GITHUB_TOKEN_VARIABLE):
+        return github_actions_assertion(
+            environ[GITHUB_URL_VARIABLE],
+            environ[GITHUB_TOKEN_VARIABLE],
+            session=session,
+            verify=verify,
+        )
+    raise AuthError(
+        f"profile {profile.name!r} has no federated token to exchange",
+        hint=(
+            f"set {TOKEN_FILE_VARIABLE}, or run in GitHub Actions with "
+            "'permissions: id-token: write'"
+        ),
+    )

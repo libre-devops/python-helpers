@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from libre_devops_helpers.core import fields
 from libre_devops_helpers.core.errors import ApiError, NotFoundError
 from libre_devops_helpers.servicenow.instance.models import Application, AppStatus, Release, User
 from libre_devops_helpers.servicenow.tables import TableClient, condition
@@ -52,7 +53,7 @@ class InstanceClient:
             if exc.status == 403:
                 return None
             raise
-        values = {str(row.get("name")): str(row.get("value") or "") for row in rows}
+        values = {str(row.get("name")): fields.text(row, "value") for row in rows}
         # glide.buildtag.last is not kept as a record on every release; glide.war is.
         tag = values.get("glide.buildtag.last") or values.get("glide.war")
         return Release.from_build_tag(tag) if tag else None
@@ -73,6 +74,7 @@ class InstanceClient:
         return sorted(found, key=lambda app: (not app.active, app.name.casefold()))
 
     def table_exists(self, name: str) -> bool:
+        """Whether the instance has a table called ``name``."""
         return (
             self.tables.first("sys_db_object", query=condition("name", name), fields=("name",))
             is not None
@@ -87,5 +89,5 @@ class InstanceClient:
             "sys_scope", query=condition("scope", SIR_SCOPE), fields=("version", "active")
         )
         if app is not None:
-            return AppStatus(name, True, str(app.get("version") or ""), f"application {SIR_SCOPE}")
+            return AppStatus(name, True, fields.text(app, "version"), f"application {SIR_SCOPE}")
         return AppStatus(name, True, detail=f"table {SIR_TABLE}")

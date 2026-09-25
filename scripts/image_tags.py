@@ -54,6 +54,7 @@ def image_tags(
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Print the tags one image gets, one a line, for the container workflow."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--version", required=True, help="the version the image holds")
     parser.add_argument("--variant", default="az", choices=sorted(VARIANTS))

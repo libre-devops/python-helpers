@@ -59,7 +59,10 @@ top-level `proxy`, `no_proxy` and `ca_bundle` apply to every call, and to the Az
 | Option | Meaning |
 | --- | --- |
 | `-p`, `--profile` | The profile, or `LDO_PROFILE`. Without it: the section's `default_profile`, then (for Microsoft) the Azure CLI's active account. |
-| `-o`, `--output` | `table` (the default), `json` (the services' full records, for `jq`) or `csv`. Data goes to stdout; notes and progress to stderr. |
+| `-o`, `--output` | `table` (the default), `json` (the services' full records, for `jq`), `csv` (with a header, for spreadsheets) or `tsv` (values only, no header, as `az -o tsv`, for `cut` and `while read`). Data goes to stdout; notes and progress to stderr, so `-o csv > file.csv` writes a clean file. |
+| `--sort COLUMN[:desc]` | Sort the rows by a column, named as the table heads it (case, spaces and underscores do not matter: `"last seen"`, `last_seen`). Repeat it to sort by more, most significant first. Numbers, versions, severities (`Low` to `Critical`) and dates sort as such, and blanks go last either way. On every list, for the table, CSV and TSV. |
+| `--unique COLUMN` | Keep only the first row for each value of a column, ignoring case; repeat it to keep one of each combination of several. It runs after `--sort`, so `--sort "last seen:desc" --unique device` keeps each device's newest record. For JSON, use `jq`'s `sort_by` and `unique_by`. |
+| `--colour`, `--no-colour` | Colour, or none, whatever the output is (also spelt `--color`, `--no-color`); before the command, e.g. `ldo --colour xdr machines web01 \| less -R`. By default colour shows on a terminal, unless `NO_COLOR` is set; `FORCE_COLOR` turns it on. |
 | `-v`, `-vv` | Info or debug logging, on stderr. |
 | `--log-format` | `text`, `json` or `otlp` (one OTLP/JSON record per line, for a collector's `otlpjsonfile` receiver). |
 
@@ -73,12 +76,18 @@ Values are read as Excel saved them: no formulas are recalculated and no macros 
 ldo devices check web01,web02
 ldo devices check -f plan.xlsx --column FQDN --sheet "Ring 1"
 cat hosts.txt | ldo xdr machines -
+ldo xdr vulns web01 --sort severity:desc --sort cvss:desc
+ldo xdr machines -f hosts.txt --sort "last seen:desc" --unique device -o csv > seen.csv
 ```
 
 **Queries** (`xdr hunt`, `graph hunt`, `azure resource-graph`, `logs query`) come from the
 argument, `--file`, or stdin.
 
 ## JSON, YAML and logs
+
+What `-o json` writes is kept stable: keys are snake_case (a service's own records keep the
+service's names), true and false are booleans, and a key is not renamed or dropped without
+an entry in the [changelog](../CHANGELOG.md). A test holds every command to it.
 
 `-o json` is indented, and coloured on a terminal: keys, strings, numbers and booleans each
 have a colour, and brackets take the banner's rainbow by how deeply they nest, so a pair
@@ -171,7 +180,7 @@ service:
 | `LDO_PROXY_ADDRESS` | The proxy for `ldo` (and the Azure CLI it runs), winning over `proxy` and `HTTPS_PROXY`, e.g. `127.0.0.1:3129` for cntlm. |
 | `HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY`, `NO_PROXY` | As every tool reads them. See [Proxies and certificates](network.md). |
 | `LDO_CA_BUNDLE`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE` | A CA bundle to use exactly as it is, in place of the public roots with the OS store. |
-| `LDO_NO_BANNER`, `NO_COLOR` | No banner; no colour. The banner only ever shows on a terminal. |
+| `LDO_NO_BANNER`, `NO_COLOR`, `FORCE_COLOR` | No banner; no colour; colour even when piped. The banner only ever shows on a terminal. |
 | `AZURE_CLIENT_SECRET`, `AZURE_FEDERATED_TOKEN_FILE` | For `client-secret` and `workload-identity` profiles, as the Azure SDKs use them. |
 | `SNOW_INSTANCE_URL`, `SNOW_CLIENT_ID`, `SNOW_CLIENT_SECRET`, `SNOW_INSTANCE_USERNAME`, `SNOW_INSTANCE_PASSWORD` | ServiceNow, with or without a config file. |
 

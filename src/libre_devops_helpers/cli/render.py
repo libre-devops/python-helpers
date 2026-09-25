@@ -1,10 +1,11 @@
 """Output. Data goes to stdout; notes and warnings go to stderr.
 
-Every data command offers three shapes through ``-o``: an aligned table for people, JSON
-(the services' full records) for jq and scripts, and CSV for spreadsheets. Tables are
-aligned with ``str.ljust`` and coloured with ``typer.style`` after padding, so colour
-codes never upset the alignment. Click strips colour when the output is not a
-terminal, so piped output stays plain.
+Every data command offers four shapes through ``-o``: an aligned table for people, JSON
+(the services' full records) for jq and scripts, CSV for spreadsheets and TSV for shell
+pipelines. ``--sort`` and ``--unique`` arrange the rows of the table, CSV and TSV first.
+Tables are aligned with ``str.ljust`` and coloured after padding, so colour codes never
+upset the alignment. Colour is decided in ``core.colour``; click strips it when the
+output is not a terminal, so piped output stays plain.
 """
 
 from __future__ import annotations
@@ -14,6 +15,8 @@ import io
 import json
 import logging
 import os
+import re
+import shutil
 import sys
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import asdict
@@ -24,18 +27,14 @@ from typing import Any
 import typer
 
 from libre_devops_helpers import __version__
-from libre_devops_helpers.core import brand
+from libre_devops_helpers.core import brand, colour, sorting
+from libre_devops_helpers.core.errors import LdoError
 from libre_devops_helpers.core.tables import QueryResult
 from libre_devops_helpers.core.util import format_duration
 from libre_devops_helpers.microsoft.tokens import Check
 
 # A cell is plain text, or (text, colour) where colour is a typer/click colour name.
 Cell = str | tuple[str, str | None]
-
-# The banner's colours (256-colour codes, red through to pink), laid in diagonal bands that
-# follow the unicorn's slant. Any brand's art gets the same sweep.
-_RAINBOW = (196, 208, 226, 46, 51, 33, 129, 201)
-_BAND = 6
 
 
 class Output(StrEnum):
@@ -44,12 +43,14 @@ class Output(StrEnum):
     TABLE = "table"
     JSON = "json"
     CSV = "csv"
+    TSV = "tsv"
 
 
 _CHECK_COLOURS = {"pass": "green", "warn": "yellow", "fail": "red"}
 
 
 def echo(text: str = "", *, err: bool = False) -> None:
+    """Write ``text`` and a line break to stdout, or with ``err`` to stderr."""
     typer.echo(text, err=err)
 
 
@@ -57,9 +58,27 @@ _log = logging.getLogger(__name__)
 
 
 class _Mode:
-    """Whether the log format is structured (json or otlp): set once, by the app."""
+    """Set for each run: whether the log format is structured (json or otlp), and how
+    ``--sort`` and ``--unique`` arrange rows: (column, descending) pairs, and columns."""
 
     structured = False
+    order: tuple[tuple[str, bool], ...] = ()
+    distinct: tuple[str, ...] = ()
+
+
+def sort_rows(specs: Sequence[str] | None) -> None:
+    """Rows from here on are sorted by ``specs``: ``COLUMN`` or ``COLUMN:desc``, most
+    significant first (``--sort``). None or empty leaves them in the order they came."""
+    try:
+        _Mode.order = tuple(sorting.parse_sort(spec) for spec in specs or ())
+    except LdoError as exc:
+        raise typer.BadParameter(f"{exc}; {exc.hint}") from None
+
+
+def unique_rows(columns: Sequence[str] | None) -> None:
+    """Rows from here on, once sorted, are kept only the first time their ``columns`` hold
+    what they hold (``--unique``). None or empty keeps every row."""
+    _Mode.distinct = tuple(columns or ())
 
 
 def structured_output(enabled: bool) -> None:
@@ -77,6 +96,7 @@ def note(text: str) -> None:
 
 
 def warn(text: str) -> None:
+    """A warning on stderr (a WARNING record in a structured log format)."""
     if _Mode.structured:
         _log.warning(text)
         return
@@ -121,108 +141,25 @@ def banner(*, force: bool = False) -> None:
         return
     if not force and (not sys.stderr.isatty() or os.environ.get(brand.env_var("NO_BANNER"))):
         return
-    plain = bool(os.environ.get("NO_COLOR"))
+    plain = colour.setting() is False
+    # Diagonal rainbow bands, which follow the unicorn's slant; any brand's art gets them.
     for row, line in enumerate(brand.BANNER.strip("\n").splitlines()):
-        typer.echo(line if plain else _diagonal(line, row), err=True)
+        typer.echo(line if plain else colour.diagonal(line, row), err=True)
     typer.secho(f"{brand.DISPLAY_NAME}  {brand.COMMAND} {__version__}", dim=True, err=True)
     typer.echo(err=True)
 
 
-def _diagonal(line: str, row: int) -> str:
-    """Colour ``line`` in bands that run along the diagonal, one style call per run."""
-    parts: list[str] = []
-    run: list[str] = []
-    colour: int | None = None
-    for col, char in enumerate(line):
-        band = _RAINBOW[((col + 2 * row) // _BAND) % len(_RAINBOW)]
-        if band != colour and run:
-            parts.append(typer.style("".join(run), fg=colour, bold=True))
-            run = []
-        colour = band
-        run.append(char)
-    if run:
-        parts.append(typer.style("".join(run), fg=colour, bold=True))
-    return "".join(parts)
-
-
 def title(text: str) -> str:
-    return typer.style(text, bold=True)
+    """``text`` in bold, for a heading."""
+    return colour.style(text, bold=True)
 
 
 def print_json(data: Any) -> None:
     """JSON on stdout: coloured on a terminal, plain when piped into jq or a script."""
-    if colour_wanted():
-        typer.echo(colour_json(_plain(data)), color=True)
+    if colour.wanted():
+        typer.echo(colour.json_text(_plain(data)), color=True)
     else:
         typer.echo(json.dumps(data, indent=2, default=_json_default))
-
-
-def colour_wanted(stream: Any = None) -> bool:
-    """Whether ``stream`` (stdout by default) is a terminal that wants colour."""
-    stream = stream or sys.stdout
-    return bool(getattr(stream, "isatty", lambda: False)()) and not os.environ.get("NO_COLOR")
-
-
-# JSON's colours (256-colour codes): brackets take the banner's rainbow by nesting depth.
-_JSON_KEY = 75
-_JSON_STRING = 114
-_JSON_NUMBER = 215
-_JSON_BOOL = 176
-_JSON_NULL = 244
-
-
-def colour_json(
-    data: Any, *, indent: int | None = 2, sort_keys: bool = False, ensure_ascii: bool = False
-) -> str:
-    """``data`` as JSON laid out as ``json.dumps`` would, in colour.
-
-    Keys, strings, numbers, booleans and null each have a colour, and brackets are
-    coloured by how deeply they nest, in the banner's rainbow, so matching pairs share
-    one. Strip the colour and the text is exactly ``json.dumps(data, indent=indent)``.
-    """
-
-    def paint(text: str, colour: int, *, bold: bool = False) -> str:
-        return typer.style(text, fg=colour, bold=bold)
-
-    def bracket(char: str, depth: int) -> str:
-        return paint(char, _RAINBOW[depth % len(_RAINBOW)], bold=True)
-
-    def scalar(value: Any) -> str:
-        text = json.dumps(value, ensure_ascii=ensure_ascii)
-        if value is None:
-            return paint(text, _JSON_NULL)
-        if isinstance(value, bool):
-            return paint(text, _JSON_BOOL)
-        if isinstance(value, int | float):
-            return paint(text, _JSON_NUMBER)
-        return paint(text, _JSON_STRING)
-
-    def render(value: Any, depth: int) -> str:
-        if isinstance(value, dict):
-            items = sorted(value.items()) if sort_keys else list(value.items())
-            if not items:
-                return bracket("{", depth) + bracket("}", depth)
-            parts = [
-                paint(json.dumps(str(key), ensure_ascii=ensure_ascii), _JSON_KEY, bold=True)
-                + (": " if indent is not None else ":")
-                + render(item, depth + 1)
-                for key, item in items
-            ]
-            return bracket("{", depth) + join(parts, depth) + bracket("}", depth)
-        if isinstance(value, list):
-            if not value:
-                return bracket("[", depth) + bracket("]", depth)
-            parts = [render(item, depth + 1) for item in value]
-            return bracket("[", depth) + join(parts, depth) + bracket("]", depth)
-        return scalar(value)
-
-    def join(parts: list[str], depth: int) -> str:
-        if indent is None:
-            return ",".join(parts)
-        inner = "\n" + " " * (indent * (depth + 1))
-        return inner + ("," + inner).join(parts) + "\n" + " " * (indent * depth)
-
-    return render(data, 0)
 
 
 def _plain(data: Any) -> Any:
@@ -236,13 +173,44 @@ def emit(
     rows: Iterable[Sequence[Cell]],
     records: Any,
 ) -> None:
-    """Write data in the chosen shape: ``rows`` for a table or CSV, ``records`` for JSON."""
+    """Write data in the chosen shape: ``rows`` for a table, CSV or TSV, ``records`` for JSON.
+
+    The rows are sorted and made unique first, as ``--sort`` and ``--unique`` asked.
+    """
     if output is Output.JSON:
+        _json_is_not_arranged()
         print_json(records)
-    elif output is Output.CSV:
+        return
+    rows = arranged(headers, rows)
+    if output is Output.CSV:
         typer.echo(csv_text(headers, rows), nl=False)
+    elif output is Output.TSV:
+        typer.echo(tsv_text(rows), nl=False)
     else:
         typer.echo(table(headers, rows))
+
+
+def arranged(headers: Sequence[str], rows: Iterable[Sequence[Cell]]) -> Iterable[Sequence[Cell]]:
+    """``rows`` sorted by the ``--sort`` columns, then one for each ``--unique`` value."""
+    if not _Mode.order and not _Mode.distinct:
+        return rows
+    order = [(sorting.column_index(headers, name), down) for name, down in _Mode.order]
+    distinct = [sorting.column_index(headers, name) for name in _Mode.distinct]
+    listed = sorting.sort_records(
+        rows, *((lambda row, at=at: _text(row[at]), down) for at, down in order)
+    )
+    if distinct:
+        listed = sorting.unique(listed, lambda row: tuple(_text(row[at]) for at in distinct))
+    return listed
+
+
+def _text(value: Cell) -> str:
+    return value[0] if isinstance(value, tuple) else value
+
+
+def _json_is_not_arranged() -> None:
+    if _Mode.order or _Mode.distinct:
+        warn("--sort and --unique arrange table, CSV and TSV rows; for JSON use jq's sort_by")
 
 
 def csv_text(headers: Sequence[str], rows: Iterable[Sequence[Cell]]) -> str:
@@ -255,9 +223,24 @@ def csv_text(headers: Sequence[str], rows: Iterable[Sequence[Cell]]) -> str:
     return buffer.getvalue()
 
 
+def tsv_text(rows: Iterable[Sequence[Cell]]) -> str:
+    """Tab-separated values, one row a line, with no header: the Azure CLI's ``-o tsv``,
+    for shell pipelines (``cut -f1``, ``while read``). A tab or line break inside a value
+    becomes a space, so a row is always one line."""
+    lines = []
+    for row in rows:
+        cells = (value[0] if isinstance(value, tuple) else value for value in row)
+        lines.append("\t".join(_TSV_UNSAFE.sub(" ", str(cell)) for cell in cells))
+    return "".join(line + "\n" for line in lines)
+
+
+_TSV_UNSAFE = re.compile(r"[\t\r\n]+")
+
+
 def query_result(result: QueryResult, output: Output) -> None:
     """A query result from Advanced Hunting, Resource Graph or Log Analytics."""
     if output is Output.JSON:
+        _json_is_not_arranged()
         print_json(list(result.rows))
     else:
         emit(
@@ -272,13 +255,27 @@ def query_result(result: QueryResult, output: Output) -> None:
         warn(f"stopped after {len(result.rows)} rows; raise --limit to fetch more")
 
 
-def table(headers: Sequence[str], rows: Iterable[Sequence[Cell]]) -> str:
-    """Left-aligned columns separated by two spaces, with a rule under the header."""
+def table(
+    headers: Sequence[str], rows: Iterable[Sequence[Cell]], *, width: int | None = None
+) -> str:
+    """Left-aligned columns separated by two spaces, with a rule under the header.
+
+    On a terminal the last column (a detail or description, usually) is cut to fit the
+    window, with an ellipsis, so a long message never wraps across the table. ``width``
+    sets the window; piped or redirected, nothing is cut.
+    """
     body = [[_cell(value) for value in row] for row in rows]
     widths = [len(header) for header in headers]
     for row in body:
         for index, (text, _) in enumerate(row):
             widths[index] = max(widths[index], len(text))
+    if width is None and sys.stdout.isatty():
+        width = shutil.get_terminal_size().columns
+    if width and widths and sum(widths) + 2 * (len(widths) - 1) > width:
+        room = width - sum(widths[:-1]) - 2 * (len(widths) - 1)
+        if room >= 20:
+            widths[-1] = room
+            body = [[*row[:-1], _clip(row[-1], room)] for row in body]
     lines = [
         _line([(header, None) for header in headers], widths, bold=True),
         _line([("-" * width, None) for width in widths], widths),
@@ -287,17 +284,23 @@ def table(headers: Sequence[str], rows: Iterable[Sequence[Cell]]) -> str:
     return "\n".join(lines)
 
 
+def _clip(cell: tuple[str, str | None], room: int) -> tuple[str, str | None]:
+    text, fg = cell
+    return (text if len(text) <= room else text[: room - 1] + "…", fg)
+
+
 def pairs(items: Iterable[tuple[str, str]]) -> str:
     """Aligned ``label  value`` lines; empty values show as ``-``."""
     materialised = list(items)
     width = max((len(label) for label, _ in materialised), default=0)
     return "\n".join(
-        f"{typer.style(label.ljust(width), bold=True)}  {value or '-'}"
+        f"{colour.style(label.ljust(width), bold=True)}  {value or '-'}"
         for label, value in materialised
     )
 
 
 def checks_table(checks: Iterable[Check]) -> str:
+    """A token's checks as a table: each one's result, name and detail."""
     return table(
         ["RESULT", "CHECK", "DETAIL"],
         [
@@ -324,7 +327,19 @@ def when(value: datetime | None, *, now: datetime | None = None) -> str:
     return f"{local:%Y-%m-%d %H:%M} ({relative})"
 
 
+def moment(value: datetime | None) -> str:
+    """Local time to the second, for events in order: ``2026-09-24 14:05:31``. In UTC,
+    and says so, where this platform cannot convert it (before 1970, on Windows)."""
+    if value is None:
+        return "-"
+    try:
+        return f"{value.astimezone():%Y-%m-%d %H:%M:%S}"
+    except (OverflowError, OSError, ValueError):
+        return f"{value:%Y-%m-%d %H:%M:%S} UTC"
+
+
 def yes_no(value: bool | None) -> str:
+    """``yes``, ``no``, or ``-`` when it is not known."""
     return "-" if value is None else "yes" if value else "no"
 
 
@@ -339,9 +354,9 @@ def _line(
 ) -> str:
     parts = []
     last = len(cells) - 1
-    for index, ((text, colour), width) in enumerate(zip(cells, widths, strict=True)):
+    for index, ((text, fg), width) in enumerate(zip(cells, widths, strict=True)):
         padded = text if index == last else text.ljust(width)
-        parts.append(typer.style(padded, fg=colour, bold=bold) if colour or bold else padded)
+        parts.append(colour.style(padded, fg, bold=bold))
     return "  ".join(parts)
 
 

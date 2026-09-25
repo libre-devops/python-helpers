@@ -19,6 +19,7 @@ az_app = typer.Typer(
 
 
 def register(app: typer.Typer) -> None:
+    """Add the ``az`` commands to ``app``."""
     app.add_typer(az_app, name="az")
 
 

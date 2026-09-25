@@ -8,20 +8,32 @@ it was asked for fails.
 
 import re
 from collections.abc import Callable
-from typing import Annotated, TypeVar
+from typing import Annotated, Any, TypeVar
 
 import typer
 
 from libre_devops_helpers.cli import render
 from libre_devops_helpers.cli.exits import ERROR
-from libre_devops_helpers.cli.options import OutputOption, ProfileOption, get_runtime
+from libre_devops_helpers.cli.options import (
+    OutputOption,
+    ProfileOption,
+    SortOption,
+    UniqueOption,
+    get_runtime,
+)
 from libre_devops_helpers.cli.render import Output
 from libre_devops_helpers.cli.runtime import MicrosoftRuntime
 from libre_devops_helpers.core import brand
 from libre_devops_helpers.core.errors import LdoError
 from libre_devops_helpers.core.util import is_guid
 from libre_devops_helpers.microsoft.config import Profile
-from libre_devops_helpers.microsoft.pim import AREAS, Area, PimAssignment, PimRequest
+from libre_devops_helpers.microsoft.pim import (
+    AREAS,
+    Area,
+    PimAssignment,
+    PimRequest,
+    PimSettings,
+)
 
 T = TypeVar("T")
 
@@ -55,6 +67,7 @@ SubscriptionOption = Annotated[
 
 
 def register(app: typer.Typer) -> None:
+    """Add the ``pim`` commands to ``app``."""
     app.add_typer(pim_app, name="pim")
 
 
@@ -150,6 +163,8 @@ def eligible(
     user: UserOption = None,
     subscription: SubscriptionOption = None,
     profile: ProfileOption = None,
+    sort: SortOption = None,
+    unique: UniqueOption = None,
     output: OutputOption = Output.TABLE,
 ) -> None:
     """List the roles you (or --user) can activate through PIM."""
@@ -190,6 +205,8 @@ def active(
         typer.Option("--permanent-only", help="Only standing access: roles with no end date."),
     ] = False,
     profile: ProfileOption = None,
+    sort: SortOption = None,
+    unique: UniqueOption = None,
     output: OutputOption = Output.TABLE,
 ) -> None:
     """List the roles you (or --user) hold now: activated through PIM, or permanent."""
@@ -258,6 +275,8 @@ def requests_(
         bool, typer.Option("--pending", help="Only requests still waiting.")
     ] = False,
     profile: ProfileOption = None,
+    sort: SortOption = None,
+    unique: UniqueOption = None,
     output: OutputOption = Output.TABLE,
 ) -> None:
     """List PIM requests you (or --user) made, newest first, and where each has got to."""
@@ -288,6 +307,8 @@ def approvals(
     entra: EntraOption = False,
     groups: GroupsOption = False,
     profile: ProfileOption = None,
+    sort: SortOption = None,
+    unique: UniqueOption = None,
     output: OutputOption = Output.TABLE,
 ) -> None:
     """List PIM requests waiting for you to approve them."""
@@ -352,7 +373,9 @@ def settings(
         else:
             found = runtime.graph_pim(selected).role_settings(role)
     except LdoError as exc:
-        raise LdoError(str(exc), hint=_hint(area, str(exc)) or exc.hint) from None
+        # The same error, of the same kind, with what to do about it in this area.
+        exc.hint = _hint(area, str(exc)) or exc.hint
+        raise
     pairs = [
         ("Role", found.role),
         ("Area", found.area),
@@ -374,8 +397,25 @@ def settings(
             output,
             [label for label, _ in pairs],
             [[value for _, value in pairs]],
-            {
-                **{label: value for label, value in pairs},
-                "rules": [dict(rule) for rule in found.raw],
-            },
+            _settings_record(found),
         )
+
+
+def _settings_record(found: PimSettings) -> dict[str, Any]:
+    """The settings for -o json: the values themselves (true and false, ISO 8601 durations
+    such as PT8H), under snake_case keys as every command's JSON has them."""
+    return {
+        "role": found.role,
+        "area": found.area,
+        "scope": found.scope,
+        "max_activation": found.max_activation or None,
+        "requires_mfa": found.requires_mfa,
+        "requires_justification": found.requires_justification,
+        "requires_ticket": found.requires_ticket,
+        "requires_approval": found.requires_approval,
+        "approvers": list(found.approvers),
+        "authentication_context": found.authentication_context or None,
+        "eligible_expiry": found.eligible_expiry or None,
+        "active_expiry": found.active_expiry or None,
+        "rules": [dict(rule) for rule in found.raw],
+    }

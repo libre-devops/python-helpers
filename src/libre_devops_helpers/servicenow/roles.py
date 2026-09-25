@@ -19,5 +19,6 @@ class RoleRequirement:
     any_of: tuple[str, ...]
 
     def met_by(self, roles: Iterable[str]) -> bool:
+        """Whether ``roles`` meet the requirement: admin, or any of the roles it accepts."""
         held = {role.casefold() for role in roles}
         return ADMIN in held or any(role.casefold() in held for role in self.any_of)

@@ -38,14 +38,17 @@ class Expectations:
 
     @property
     def needs_entra(self) -> bool:
+        """Whether any check needs an Entra lookup: presence, or group membership."""
         return self.in_entra or bool(self.groups)
 
     @property
     def needs_defender(self) -> bool:
+        """Whether any check needs a Defender lookup: onboarding, health, tags or device groups."""
         return self.onboarded or self.active or bool(self.tags) or bool(self.device_groups)
 
     @property
     def needs_intune(self) -> bool:
+        """Whether any check needs an Intune lookup: enrolment or compliance."""
         return self.in_intune or self.compliant
 
     @property
@@ -89,9 +92,11 @@ class DeviceReport:
 
     @property
     def complete(self) -> bool:
+        """Whether the device met every check."""
         return all(outcome.status == "met" for outcome in self.outcomes)
 
     def outcome(self, check: str) -> Outcome | None:
+        """The outcome of the check named ``check``, or None when it was not asked for."""
         return next((item for item in self.outcomes if item.check == check), None)
 
 
@@ -106,6 +111,7 @@ class CheckRun:
 
     @property
     def complete(self) -> bool:
+        """Whether the pass ran, reported on every device asked for, and each met every check."""
         return (
             self.error is None
             and len(self.reports) == self.expected

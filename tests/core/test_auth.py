@@ -1,8 +1,11 @@
+import base64
+import hashlib
 from datetime import UTC, datetime, timedelta
 
 from libre_devops_helpers.core.auth import (
     AccessToken,
     CachingTokenProvider,
+    Pkce,
     token_source,
 )
 
@@ -71,3 +74,17 @@ def test_refresh_is_harmless_on_a_provider_without_a_cache():
     bearer = token_source(provider, "r", "T")
     bearer.refresh()
     assert bearer() == "t1"
+
+
+def test_a_pkce_challenge_is_the_hash_of_a_verifier_that_stays_secret():
+    proof = Pkce.new()
+    digest = hashlib.sha256(proof.verifier.encode()).digest()
+    assert proof.challenge == base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
+    assert proof.parameters == {
+        "code_challenge": proof.challenge,
+        "code_challenge_method": "S256",
+        "state": proof.state,
+    }
+    assert proof.verifier not in repr(proof)
+    assert proof.state not in repr(proof)
+    assert Pkce.new().verifier != proof.verifier  # a new one each sign-in

@@ -3,6 +3,83 @@
 All notable changes to libre-devops-helpers are recorded here. The project follows
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- `ldo xdr timeline DEVICE`: a device's events, newest first, as the portal's timeline shows
+  them: processes, network connections, files, registry, logons, image loads, other device
+  events and alerts, with `--type` to choose, a window (`--since`, `--today`, `--from` and
+  `--to`) and `--limit`. Defender has no API for the timeline itself, so this is one Advanced
+  Hunting query over the device tables, through Graph or `--endpoint`; the docs say what
+  that means (30 days, a row limit, the events without the portal's extras).
+- `ldo xdr detections list`, `show` and `export`: Defender XDR's custom detection rules, the
+  detections Sentinel runs from the Defender portal, read through Graph. `list` exits 3 when
+  Defender has turned a rule off itself (`autoDisabled`), the one sign of failing runs left
+  once the legacy `lastRunDetails` goes on 2026-10-01. `export` (and `show --yaml`) writes
+  each rule as a YAML file for terraform-msgraph-xdr-custom-detection-rules, in its folder
+  layout, checked against its schema, with `TODO(export)` comments for what needs review.
+- `ldo logs ingestion`: which tables a workspace is receiving, from its `Usage` table: when
+  each last got data, for how long it has been quiet, and its GB and billable GB. Quiet
+  tables come first, and it exits 3 when there are any.
+- `--from` and `--to` take a time as well as a day: `--from 2026-09-24T09:00 --to
+  2026-09-24T12:30`, local time, or UTC with a `Z`. For `xdr incidents` as well.
+- `-o tsv` on every data command: tab-separated values, one row a line, with no header, as
+  the Azure CLI's `-o tsv`, for shell pipelines. A tab or line break inside a value becomes a
+  space.
+- `--colour` and `--no-colour` (or `--color`, `--no-color`) before any command: colour, or
+  none, whatever the output is, e.g. for `less -R`. `FORCE_COLOR` turns colour on too.
+- `--sort COLUMN[:desc]` and `--unique COLUMN` on every list, by the column names the table
+  shows: `ldo xdr vulns web01 --sort severity:desc --sort cvss:desc`, or
+  `ldo xdr machines -f hosts.txt --sort "last seen:desc" --unique device`. Numbers, versions,
+  severities and dates sort as such, names naturally (`web2` before `web10`), blanks last.
+  For the table, CSV and TSV; JSON is left for `jq`.
+- `core.sorting` (`sort_records`, `unique`, `natural_key`) and `core.colour` (the colour
+  decision, ANSI styles, coloured JSON), for library use as well as the CLI.
+- For library use: `GraphServiceClient` and `ArmServiceClient` (`microsoft.api_clients`)
+  and `core.http.ServiceClient`, which every client now builds on, so each has `create`,
+  `for_profile` and `with` alike (ServiceNow's `TableClient` gains `with`); `core.fields`
+  for reading API JSON; `core.util.require_guid`. `ApiClient(network_settings=...)` gives one
+  client its own proxy and certificates; `EntraClient.look_up_devices` looks names up and checks group membership in
+  one call; `core.probe` holds the network test's probe; `core.auth.Pkce` the proof key a
+  browser sign-in uses.
+
+### Security
+
+- `ldo network test` printed a proxy address's password (`http://user:password@proxy`, as
+  `HTTPS_PROXY` often holds) in its table, its JSON and its hints. Proxy addresses are now
+  shown as `user:***@` everywhere; the real one is still what calls go through.
+
+### Fixed
+
+- Two commands signing in at once (two terminals, say) could lose one's kept sign-in, or
+  fail on a shared temporary file. The token cache is now changed under a lock file.
+- Names and ids checked before they go into a URL (machine ids, job and stream ids, vault
+  and Logic App names, profile names) let a trailing line break through. They no longer do.
+- `entra devices` lists a name's devices most recently signed in first, so the ones marked
+  as older records are older.
+- `network test` reads a TLS-inspecting proxy's certificate through a proxy that wants a
+  user and password, as the calls themselves do.
+
+### Changed
+
+- `pim settings -o json` writes snake_case keys with real values (`"requires_mfa": true`,
+  `"max_activation": "PT8H"`), as every other command's JSON does. It wrote the table's
+  labels (`"Needs MFA": "yes"`). Every command's JSON shape is now held by a test.
+- Something given that cannot be used (a malformed id, an empty query, an unknown
+  severity or resource) is an `InputError` everywhere, for library callers catching it; a
+  profile that cannot do what was asked is a `ConfigError`.
+- On a terminal, a table's last column is cut to fit the window, with an ellipsis, so a long
+  message (an error's detail, say) no longer wraps across the table. Piped, redirected,
+  CSV, TSV and JSON output keep every character.
+- `self-test`'s progress lines line up, whatever the count.
+- The code is checked harder: mypy in strict mode, ruff's security rules, a complexity limit
+  of 10 per function (the device checker, the token checks and several commands are split
+  into named steps), and a docstring on every public module, class and function. The API
+  clients share their setup, models read API JSON one way, and the devices, entra, logicapp
+  and xdr commands are split into a module per area. None of it changes what a command
+  does, and a test now proves that for every command's JSON.
+
 ## 0.5.1rc1
 
 ### Added

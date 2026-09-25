@@ -48,6 +48,8 @@ IDENTIFIER = re.compile(r"^[A-Z][A-Za-z0-9]*$")
 
 @dataclass(frozen=True)
 class Brand:
+    """The names the project goes by, as brand.toml holds them."""
+
     display_name: str
     distribution: str
     package: str
@@ -58,10 +60,12 @@ class Brand:
 
     @classmethod
     def load(cls, path: Path) -> Brand:
+        """The names in ``path`` (brand.toml)."""
         data = tomllib.loads(path.read_text(encoding="utf-8"))
         return cls(**{field.name: str(data[field.name]) for field in fields(cls)})
 
     def save(self, path: Path) -> None:
+        """Write these names to ``path``, with the note on how to change them."""
         lines = [
             "# The names this project goes by. Change them with 'just rebrand', never by hand: the",
             "# recipe rewrites the code, tests and docs to match, then updates this file.",
@@ -70,6 +74,7 @@ class Brand:
         path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     def validate(self) -> None:
+        """Exit with a message when a name could not be used where it goes."""
         checks = [
             ("package", PACKAGE, "lowercase letters, digits and underscores"),
             ("distribution", DISTRIBUTION, "lowercase letters, digits and hyphens"),
@@ -137,6 +142,7 @@ def rules(old: Brand, new: Brand) -> list[tuple[re.Pattern[str], str]]:
 
 
 def text_files(root: Path) -> list[Path]:
+    """Every text file under ``root`` a rename may touch, skipping build output and binaries."""
     found = []
     for path in sorted(root.rglob("*")):
         relative = path.relative_to(root)
@@ -203,6 +209,7 @@ def verify(root: Path) -> None:
         ["uv", "sync"],
         ["uv", "run", "ruff", "check", "src", "tests", "scripts"],
         ["uv", "run", "ruff", "format", "--check", "src", "tests", "scripts"],
+        ["uv", "run", "mypy"],
         ["uv", "run", "pytest", "-q"],
     ):
         print("$", " ".join(command), flush=True)
@@ -211,6 +218,7 @@ def verify(root: Path) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Rename the project to the names given, then prove it still passes its checks."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--display-name", help='e.g. "Contoso Helpers"')
     parser.add_argument("--command", help="the CLI command, e.g. contoso")

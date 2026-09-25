@@ -10,15 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, ClassVar, Literal
 
-from libre_devops_helpers.core.util import parse_datetime
-
-
-def _text(data: Mapping[str, Any], key: str) -> str:
-    return str(data.get(key) or "")
-
-
-def _bool(value: object) -> bool | None:
-    return value if isinstance(value, bool) else None
+from libre_devops_helpers.core import fields
 
 
 def _strings(value: object) -> tuple[str, ...]:
@@ -46,15 +38,16 @@ class EntraDevice:
 
     @classmethod
     def from_json(cls, data: Mapping[str, Any]) -> EntraDevice:
+        """A device as Graph returns it."""
         return cls(
-            id=str(data.get("id", "")),
-            display_name=_text(data, "displayName"),
-            device_id=_text(data, "deviceId"),
-            operating_system=_text(data, "operatingSystem"),
-            os_version=_text(data, "operatingSystemVersion"),
-            enabled=_bool(data.get("accountEnabled")),
-            trust_type=_text(data, "trustType"),
-            last_sign_in=parse_datetime(data.get("approximateLastSignInDateTime")),
+            id=fields.text(data, "id"),
+            display_name=fields.text(data, "displayName"),
+            device_id=fields.text(data, "deviceId"),
+            operating_system=fields.text(data, "operatingSystem"),
+            os_version=fields.text(data, "operatingSystemVersion"),
+            enabled=fields.flag(data.get("accountEnabled")),
+            trust_type=fields.text(data, "trustType"),
+            last_sign_in=fields.when(data, "approximateLastSignInDateTime"),
             raw=dict(data),
         )
 
@@ -77,16 +70,44 @@ class EntraGroup:
 
     @classmethod
     def from_json(cls, data: Mapping[str, Any]) -> EntraGroup:
+        """A group as Graph returns it; ``dynamic`` from its group types."""
         group_types = data.get("groupTypes")
         return cls(
-            id=str(data.get("id", "")),
-            display_name=_text(data, "displayName"),
-            description=_text(data, "description"),
+            id=fields.text(data, "id"),
+            display_name=fields.text(data, "displayName"),
+            description=fields.text(data, "description"),
             dynamic=isinstance(group_types, list) and "DynamicMembership" in group_types,
-            security_enabled=_bool(data.get("securityEnabled")),
-            membership_rule=_text(data, "membershipRule"),
+            security_enabled=fields.flag(data.get("securityEnabled")),
+            membership_rule=fields.text(data, "membershipRule"),
             raw=dict(data),
         )
+
+
+@dataclass(frozen=True)
+class DeviceLookup:
+    """One device name looked up: the Entra devices that have it (stale registrations share
+    names, so there may be several), and which of the ``groups`` asked about they are in."""
+
+    query: str
+    devices: tuple[EntraDevice, ...]
+    groups: tuple[EntraGroup, ...] = ()
+    # Each group's id, and the object ids of every device in it.
+    members: Mapping[str, frozenset[str]] = field(default_factory=dict, repr=False)
+
+    @property
+    def found(self) -> bool:
+        """Whether Entra has any device with the name."""
+        return bool(self.devices)
+
+    def in_group(self, group: EntraGroup, device: EntraDevice | None = None) -> bool:
+        """Whether ``device``, or else any device with the name, is a member of ``group``."""
+        ids = self.members.get(group.id, frozenset())
+        return any(item.id in ids for item in ((device,) if device else self.devices))
+
+    @property
+    def in_every_group(self) -> bool:
+        """Whether a device with the name is in every group asked about."""
+        return all(self.in_group(group) for group in self.groups)
 
 
 @dataclass(frozen=True)
@@ -108,14 +129,15 @@ class EntraUser:
 
     @classmethod
     def from_json(cls, data: Mapping[str, Any]) -> EntraUser:
+        """A user as Graph returns it."""
         return cls(
-            id=str(data.get("id", "")),
-            display_name=_text(data, "displayName"),
-            user_principal_name=_text(data, "userPrincipalName"),
-            mail=_text(data, "mail"),
-            enabled=_bool(data.get("accountEnabled")),
-            user_type=_text(data, "userType"),
-            synced=_bool(data.get("onPremisesSyncEnabled")),
+            id=fields.text(data, "id"),
+            display_name=fields.text(data, "displayName"),
+            user_principal_name=fields.text(data, "userPrincipalName"),
+            mail=fields.text(data, "mail"),
+            enabled=fields.flag(data.get("accountEnabled")),
+            user_type=fields.text(data, "userType"),
+            synced=fields.flag(data.get("onPremisesSyncEnabled")),
             raw=dict(data),
         )
 
@@ -136,17 +158,19 @@ class DirectoryObject:
 
     @classmethod
     def from_json(cls, data: Mapping[str, Any], kind: str | None = None) -> DirectoryObject:
-        odata_type = _text(data, "@odata.type").removeprefix("#microsoft.graph.")
+        """Any directory object, its kind from ``@odata.type`` unless ``kind`` says; the detail is
+        what best tells one apart (a UPN, an OS, an app id)."""
+        odata_type = fields.text(data, "@odata.type").removeprefix("#microsoft.graph.")
         kind = kind or odata_type or "object"
         detail = {
-            "user": _text(data, "userPrincipalName"),
-            "device": _text(data, "operatingSystem"),
-            "servicePrincipal": _text(data, "appId"),
+            "user": fields.text(data, "userPrincipalName"),
+            "device": fields.text(data, "operatingSystem"),
+            "servicePrincipal": fields.text(data, "appId"),
         }.get(kind, "")
         return cls(
-            id=str(data.get("id", "")),
+            id=fields.text(data, "id"),
             kind=kind,
-            display_name=_text(data, "displayName"),
+            display_name=fields.text(data, "displayName"),
             detail=detail,
             raw=dict(data),
         )
@@ -167,8 +191,8 @@ class RoleAssignment:
     def from_directory_role(cls, data: Mapping[str, Any]) -> RoleAssignment:
         """From a ``directoryRole`` the principal is a member of (tenant-wide, active)."""
         return cls(
-            role_name=_text(data, "displayName"),
-            role_template_id=_text(data, "roleTemplateId"),
+            role_name=fields.text(data, "displayName"),
+            role_template_id=fields.text(data, "roleTemplateId"),
             state="active",
             scope="/",
             ends=None,
@@ -178,17 +202,15 @@ class RoleAssignment:
     @classmethod
     def from_eligibility(cls, data: Mapping[str, Any]) -> RoleAssignment:
         """From a PIM ``unifiedRoleEligibilitySchedule`` expanded with its role definition."""
-        definition = data.get("roleDefinition")
-        definition = definition if isinstance(definition, Mapping) else {}
-        schedule = data.get("scheduleInfo")
-        expiration = schedule.get("expiration") if isinstance(schedule, Mapping) else None
-        ends = expiration.get("endDateTime") if isinstance(expiration, Mapping) else None
+        definition = fields.mapping(data.get("roleDefinition"))
+        expiration = fields.mapping(fields.mapping(data.get("scheduleInfo")).get("expiration"))
+        role_id = fields.text(data, "roleDefinitionId")
         return cls(
-            role_name=_text(definition, "displayName") or _text(data, "roleDefinitionId"),
-            role_template_id=_text(definition, "templateId") or _text(data, "roleDefinitionId"),
+            role_name=fields.text(definition, "displayName") or role_id,
+            role_template_id=fields.text(definition, "templateId") or role_id,
             state="eligible",
-            scope=_text(data, "directoryScopeId") or "/",
-            ends=parse_datetime(ends),
+            scope=fields.text(data, "directoryScopeId") or "/",
+            ends=fields.when(expiration, "endDateTime"),
             raw=dict(data),
         )
 
@@ -222,32 +244,30 @@ class SignIn:
 
     @property
     def succeeded(self) -> bool:
+        """Whether the sign-in succeeded (error code 0)."""
         return self.error_code == 0
 
     @classmethod
     def from_json(cls, data: Mapping[str, Any]) -> SignIn:
-        status = data.get("status")
-        status = status if isinstance(status, Mapping) else {}
-        device = data.get("deviceDetail")
-        device = device if isinstance(device, Mapping) else {}
-        location = data.get("location")
-        location = location if isinstance(location, Mapping) else {}
+        """A sign-in log entry as Graph returns it."""
+        status = fields.mapping(data.get("status"))
+        device = fields.mapping(data.get("deviceDetail"))
+        location = fields.mapping(data.get("location"))
         code = status.get("errorCode")
-        place = ", ".join(
-            part for part in (_text(location, "city"), _text(location, "countryOrRegion")) if part
-        )
+        city, country = fields.text(location, "city"), fields.text(location, "countryOrRegion")
+        place = ", ".join(part for part in (city, country) if part)
         return cls(
-            id=str(data.get("id", "")),
-            created=parse_datetime(data.get("createdDateTime")),
-            user=_text(data, "userPrincipalName"),
-            app=_text(data, "appDisplayName"),
-            ip_address=_text(data, "ipAddress"),
-            client_app=_text(data, "clientAppUsed"),
-            conditional_access=_text(data, "conditionalAccessStatus"),
+            id=fields.text(data, "id"),
+            created=fields.when(data, "createdDateTime"),
+            user=fields.text(data, "userPrincipalName"),
+            app=fields.text(data, "appDisplayName"),
+            ip_address=fields.text(data, "ipAddress"),
+            client_app=fields.text(data, "clientAppUsed"),
+            conditional_access=fields.text(data, "conditionalAccessStatus"),
             error_code=code if isinstance(code, int) and not isinstance(code, bool) else 0,
-            failure_reason=_text(status, "failureReason"),
-            device_name=_text(device, "displayName"),
-            operating_system=_text(device, "operatingSystem"),
+            failure_reason=fields.text(status, "failureReason"),
+            device_name=fields.text(device, "displayName"),
+            operating_system=fields.text(device, "operatingSystem"),
             location=place,
             raw=dict(data),
         )
@@ -298,20 +318,16 @@ class ConditionalAccessPolicy:
 
     @classmethod
     def from_json(cls, data: Mapping[str, Any]) -> ConditionalAccessPolicy:
-        conditions = data.get("conditions")
-        conditions = conditions if isinstance(conditions, Mapping) else {}
-        users = conditions.get("users")
-        users = users if isinstance(users, Mapping) else {}
-        apps = conditions.get("applications")
-        apps = apps if isinstance(apps, Mapping) else {}
-        grant = data.get("grantControls")
-        grant = grant if isinstance(grant, Mapping) else {}
-        session = data.get("sessionControls")
-        session = session if isinstance(session, Mapping) else {}
+        """A Conditional Access policy as Graph returns it, conditions and controls flattened."""
+        conditions = fields.mapping(data.get("conditions"))
+        users = fields.mapping(conditions.get("users"))
+        apps = fields.mapping(conditions.get("applications"))
+        grant = fields.mapping(data.get("grantControls"))
+        session = fields.mapping(data.get("sessionControls"))
         return cls(
-            id=str(data.get("id", "")),
-            display_name=_text(data, "displayName"),
-            state=_text(data, "state"),
+            id=fields.text(data, "id"),
+            display_name=fields.text(data, "displayName"),
+            state=fields.text(data, "state"),
             include_users=_strings(users.get("includeUsers")),
             exclude_users=_strings(users.get("excludeUsers")),
             include_groups=_strings(users.get("includeGroups")),
@@ -325,10 +341,12 @@ class ConditionalAccessPolicy:
                 *_strings(grant.get("customAuthenticationFactors")),
                 *(("terms of use",) if grant.get("termsOfUse") else ()),
             ),
-            grant_operator=_text(grant, "operator"),
+            grant_operator=fields.text(grant, "operator"),
             session_controls=tuple(
                 name for name, value in session.items() if value and name != "@odata.type"
             ),
-            modified=parse_datetime(data.get("modifiedDateTime") or data.get("createdDateTime")),
+            modified=(
+                fields.when(data, "modifiedDateTime") or fields.when(data, "createdDateTime")
+            ),
             raw=dict(data),
         )

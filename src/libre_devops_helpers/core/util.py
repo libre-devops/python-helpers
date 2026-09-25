@@ -8,19 +8,48 @@ from datetime import UTC, datetime, timedelta
 
 from libre_devops_helpers.core.errors import InputError
 
-_GUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
+_GUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.IGNORECASE)
+# What a host name can hold (letters, digits, dots, hyphens and underscores), and no more,
+# so a name checked by require_host is safe inside a query's string literal.
+_HOST = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,252}")
 # Some Microsoft APIs return seven fractional digits; datetime accepts six.
 _LONG_FRACTION = re.compile(r"\.(\d{6})\d+")
 
 
 def is_guid(value: str) -> bool:
     """True when ``value`` is a GUID in the 8-4-4-4-12 form."""
-    return bool(_GUID.match(value.strip()))
+    return bool(_GUID.fullmatch(value.strip()))
+
+
+def require_guid(value: str, what: str, *, hint: str | None = None) -> str:
+    """``value`` as a lowercase GUID, else an InputError saying ``not {what}``.
+
+    An id that goes into a URL path or a filter comes through here first, so a path is
+    never built from anything else. ``what`` names it, with its article: "an object id".
+    """
+    if not is_guid(value):
+        raise InputError(f"not {what}: {value!r}", hint=hint)
+    return value.strip().lower()
 
 
 def short_name(name: str) -> str:
     """The host part of a name: ``web01.corp.example.com`` -> ``web01``."""
     return name.strip().rstrip(".").split(".", 1)[0]
+
+
+def require_host(value: str) -> str:
+    """``value`` as a device name that can go into a query, else an InputError.
+
+    Only the characters a host name holds are let in, so no quote, space or operator
+    can reach the query around it. A trailing dot (an absolute FQDN) is dropped.
+    """
+    name = value.strip().rstrip(".")
+    if not _HOST.fullmatch(name):
+        raise InputError(
+            f"{value!r} is not a device name that can go in a query",
+            hint="use the host name or FQDN, e.g. web01 or web01.corp.example",
+        )
+    return name
 
 
 def candidate_names(name: str) -> list[str]:
@@ -106,6 +135,16 @@ def parse_duration(text: str) -> timedelta:
     if seconds <= 0:
         raise InputError(f"the duration {text!r} must be more than zero")
     return timedelta(seconds=seconds)
+
+
+def format_span(delta: timedelta) -> str:
+    """A span a person gave, as they would give it: ``7d``, ``12h`` or ``30m`` when it is a
+    whole number of them, else as ``format_duration`` writes it."""
+    seconds = int(delta.total_seconds())
+    for unit, size in (("d", 86400), ("h", 3600), ("m", 60)):
+        if seconds and seconds % size == 0:
+            return f"{seconds // size}{unit}"
+    return format_duration(delta)
 
 
 def format_duration(delta: timedelta) -> str:

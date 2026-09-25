@@ -11,19 +11,20 @@ import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import Any, Literal, Self
+from typing import Any, Literal
 from urllib.parse import urlsplit
 
 import requests
 
+from libre_devops_helpers.core import fields
 from libre_devops_helpers.core.auth import TokenProvider, token_source
-from libre_devops_helpers.core.errors import LdoError
-from libre_devops_helpers.core.http import ApiClient
+from libre_devops_helpers.core.errors import InputError
+from libre_devops_helpers.core.http import ApiClient, ServiceClient
 from libre_devops_helpers.microsoft.clouds import PUBLIC, Cloud
 from libre_devops_helpers.microsoft.config import Profile
 
 API_VERSION = "7.4"
-_VAULT_NAME = re.compile(r"^[a-zA-Z][a-zA-Z0-9-]{1,22}[a-zA-Z0-9]$")
+_VAULT_NAME = re.compile(r"[a-zA-Z][a-zA-Z0-9-]{1,22}[a-zA-Z0-9]")
 
 ItemKind = Literal["secret", "certificate", "key"]
 KINDS: tuple[ItemKind, ...] = ("secret", "certificate", "key")
@@ -39,13 +40,13 @@ def vault_url(vault: str, cloud: Cloud = PUBLIC) -> str:
         parts = urlsplit(value)
         host = (parts.hostname or "").lower()
         if parts.scheme != "https" or not host.endswith("." + cloud.keyvault_suffix):
-            raise LdoError(
+            raise InputError(
                 f"{vault!r} is not a Key Vault URL in the {cloud.name} cloud",
                 hint=f"expected https://<name>.{cloud.keyvault_suffix}",
             )
         return f"https://{host}"
-    if not _VAULT_NAME.match(value):
-        raise LdoError(f"not a Key Vault name: {vault!r}")
+    if not _VAULT_NAME.fullmatch(value):
+        raise InputError(f"not a Key Vault name: {vault!r}")
     return f"https://{value.lower()}.{cloud.keyvault_suffix}"
 
 
@@ -69,9 +70,9 @@ class VaultItem:
 
     @classmethod
     def from_json(cls, vault: str, kind: ItemKind, data: Mapping[str, Any]) -> VaultItem:
-        attributes = data.get("attributes")
-        attributes = attributes if isinstance(attributes, Mapping) else {}
-        identifier = str(data.get("kid") or data.get("id") or "")
+        """A secret, certificate or key's metadata as Key Vault lists it; never its value."""
+        attributes = fields.mapping(data.get("attributes"))
+        identifier = fields.text(data, "kid") or fields.text(data, "id")
         enabled = attributes.get("enabled")
         return cls(
             vault=vault,
@@ -81,16 +82,16 @@ class VaultItem:
             expires=_epoch(attributes.get("exp")),
             not_before=_epoch(attributes.get("nbf")),
             updated=_epoch(attributes.get("updated")),
-            content_type=str(data.get("contentType") or ""),
+            content_type=fields.text(data, "contentType"),
             raw=dict(data),
         )
 
 
-class KeyVaultClient:
+class KeyVaultClient(ServiceClient):
     """Metadata listing for one vault. Close it (or use ``with``) when done."""
 
     def __init__(self, api: ApiClient, vault: str) -> None:
-        self.api = api
+        super().__init__(api)
         self.vault = vault
 
     @classmethod
@@ -129,15 +130,6 @@ class KeyVaultClient:
         return cls.create(
             tokens, profile.tenant_id, vault, cloud=profile.cloud, verify=verify, session=session
         )
-
-    def close(self) -> None:
-        self.api.close()
-
-    def __enter__(self) -> Self:
-        return self
-
-    def __exit__(self, *exc_info: object) -> None:
-        self.close()
 
     def items(self, kinds: Iterable[ItemKind] = KINDS) -> list[VaultItem]:
         """Secrets, certificates and keys in the vault, by kind then name.

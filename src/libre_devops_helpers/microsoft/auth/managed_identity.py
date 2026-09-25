@@ -70,6 +70,7 @@ class ManagedIdentityCredential:
         return f"ManagedIdentityCredential(client_id={self.client_id!r}, source={self.source!r})"
 
     def get_token(self, resource: str, tenant_id: str) -> AccessToken:
+        """A token for ``resource`` from this Azure host's identity endpoint."""
         params = {"api-version": self._version, "resource": resource}
         if self.client_id:
             params["client_id"] = self.client_id

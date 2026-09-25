@@ -51,7 +51,7 @@ jobs:
         run: '"$RUNNER_TEMP/gitleaks" git --config .gitleaks.toml --redact --verbose .'
 
   lint:
-    name: Lint and format check
+    name: Lint, format and type check
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -74,6 +74,10 @@ jobs:
       # Check only: formatting is fixed locally with 'just fmt', never in CI.
       - name: Format check
         run: uv run ruff format --check src tests scripts
+
+      # Strict, on the package; the settings are in pyproject.toml.
+      - name: Type check
+        run: uv run mypy
 
   audit:
     name: Dependency audit (pip-audit)

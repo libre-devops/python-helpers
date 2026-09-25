@@ -11,22 +11,13 @@ from typing import Annotated, Any
 
 import typer
 
-from libre_devops_helpers.cli import render
 from libre_devops_helpers.core import brand, yaml_text
+from libre_devops_helpers.core import colour as core_colour
 from libre_devops_helpers.core.errors import InputError
-
-# YAML's colours follow JSON's: keys, strings, numbers, booleans, null.
-_YAML_COLOURS = {
-    "key": (75, True),
-    "string": (114, False),
-    "number": (215, False),
-    "bool": (176, False),
-    "null": (244, False),
-    "punct": (None, False),
-}
 
 
 def register(app: typer.Typer) -> None:
+    """Add the ``json`` command to ``app``."""
     app.command("json")(pretty)
 
 
@@ -61,14 +52,15 @@ def pretty(
     (brackets by how deeply they nest). Piped on, it stays plain. --yaml writes YAML.
     """
     documents = _documents(_read(file))
-    painted = render.colour_wanted() if colour is None else colour
+    painted = core_colour.wanted() if colour is None else colour
     if yaml:
         if compact:
             raise InputError("--compact is for JSON; YAML has no one-line form here")
-        paint = _paint_yaml if painted else None
+        # YAML's colours are JSON's: keys, strings, numbers, booleans, null.
+        paint = core_colour.paint if painted else None
         for number, document in enumerate(documents):
             if number:
-                typer.echo(typer.style("---", dim=True) if painted else "---", color=painted)
+                typer.echo(core_colour.style("---", dim=True) if painted else "---", color=painted)
             data = _sorted(document) if sort_keys else document
             typer.echo(
                 yaml_text.dumps(data, indent=indent or 2, paint=paint), nl=False, color=painted
@@ -77,7 +69,7 @@ def pretty(
     spacing = None if compact else indent
     for document in documents:
         if painted:
-            text = render.colour_json(document, indent=spacing, sort_keys=sort_keys)
+            text = core_colour.json_text(document, indent=spacing, sort_keys=sort_keys)
         else:
             text = json.dumps(
                 document,
@@ -87,11 +79,6 @@ def pretty(
                 separators=(",", ":") if compact else None,
             )
         typer.echo(text, color=painted)
-
-
-def _paint_yaml(kind: str, text: str) -> str:
-    colour, bold = _YAML_COLOURS[kind]
-    return typer.style(text, fg=colour, bold=bold) if colour is not None else text
 
 
 def _sorted(value: Any) -> Any:

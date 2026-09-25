@@ -52,8 +52,8 @@ DEFAULT_REDIRECT_URI = "http://localhost:8765/callback"
 AUTH_METHODS = ("oauth", "basic")
 # How an oauth profile signs in when it has no kept refresh token.
 SIGN_INS = ("browser", "password")
-_ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-_INSTANCE_NAME = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+_ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_INSTANCE_NAME = re.compile(r"[a-z0-9][a-z0-9-]*")
 _SECTION_KEYS = frozenset({"default_profile", "profiles"})
 _PROFILE_KEYS = frozenset(
     {
@@ -116,13 +116,16 @@ class Profile:
 
     @property
     def host(self) -> str:
+        """The instance's host name, from its URL."""
         return urlsplit(self.instance).netloc
 
     @property
     def has_placeholder(self) -> bool:
+        """Whether the instance is still the template's placeholder."""
         return self.host == PLACEHOLDER_HOST
 
     def require_real_instance(self) -> None:
+        """A ConfigError when the instance is still the template's placeholder."""
         if self.has_placeholder:
             raise ConfigError(
                 f"ServiceNow profile {self.name!r} still has the template's placeholder instance",
@@ -139,6 +142,7 @@ class ServiceNowConfig:
     default_profile: str | None = None
 
     def get(self, name: str) -> Profile:
+        """The profile called ``name``, or a ConfigError listing those there are."""
         try:
             return self.profiles[name]
         except KeyError:
@@ -155,7 +159,7 @@ def instance_url(value: str, where: str) -> str:
     A bare instance name (``dev12345``) means ``https://dev12345.service-now.com``.
     """
     value = value.strip()
-    if _INSTANCE_NAME.match(value):
+    if _INSTANCE_NAME.fullmatch(value):
         return f"https://{value}.service-now.com"
     parts = urlsplit(value)
     # The password or token goes with every request, so plain http is never acceptable.
@@ -256,6 +260,6 @@ def _redirect_ok(uri: str) -> bool:
 
 def _env_name(data: Mapping[str, Any], key: str, where: str) -> str | None:
     value = text(data, key, where)
-    if value is not None and not _ENV_NAME.match(value):
+    if value is not None and not _ENV_NAME.fullmatch(value):
         raise ConfigError(f"{where}: {key} must be an environment variable name")
     return value

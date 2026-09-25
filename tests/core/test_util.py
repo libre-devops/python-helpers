@@ -11,6 +11,7 @@ from libre_devops_helpers.core.util import (
     odata_string,
     parse_datetime,
     parse_duration,
+    require_guid,
     short_name,
     split_names,
 )
@@ -102,3 +103,12 @@ def test_microsofts_not_known_dates_are_none(value):
 
 def test_a_real_date_still_parses():
     assert parse_datetime("2026-09-25T05:09:00Z").year == 2026
+
+
+def test_an_id_for_a_path_must_be_a_guid_and_comes_back_lowercase():
+    upper = "A1B2C3D4-0000-4000-8000-00000000000A"
+    assert require_guid(f" {upper} ", "an object id") == upper.lower()
+    for bad in ("web01", "a1b2c3d4-0000-4000-8000-00000000000a/../x", f"{upper}\n x"):
+        with pytest.raises(InputError, match="not an object id") as caught:
+            require_guid(bad, "an object id", hint="pass the object id")
+        assert caught.value.hint == "pass the object id"

@@ -46,6 +46,7 @@ class PimAssignment:
 
     @property
     def activated(self) -> bool:
+        """Whether the role is held because it was activated, rather than assigned outright."""
         return self.assignment_type.casefold() == "activated"
 
 
@@ -71,6 +72,7 @@ class PimRequest:
 
     @property
     def pending(self) -> bool:
+        """Whether the request is waiting for an approver."""
         return self.status.casefold() == "pendingapproval"
 
 

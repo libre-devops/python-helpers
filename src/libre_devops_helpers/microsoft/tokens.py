@@ -43,18 +43,22 @@ class DecodedToken:
 
     @property
     def expires_at(self) -> datetime | None:
+        """When the token expires (``exp``), or None when it does not say."""
         return self.timestamp("exp")
 
     @property
     def not_before(self) -> datetime | None:
+        """When the token becomes valid (``nbf``), or None."""
         return self.timestamp("nbf")
 
     @property
     def issued_at(self) -> datetime | None:
+        """When the token was issued (``iat``), or None."""
         return self.timestamp("iat")
 
     @property
     def audiences(self) -> tuple[str, ...]:
+        """Who the token is for (``aud``): one audience or several."""
         aud = self.claims.get("aud")
         if isinstance(aud, str):
             return (aud,)
@@ -64,10 +68,12 @@ class DecodedToken:
 
     @property
     def tenant_id(self) -> str:
+        """The tenant that issued the token (``tid``), or empty."""
         return str(self.claims.get("tid", ""))
 
     @property
     def issuer(self) -> str:
+        """The token's issuer URL (``iss``), or empty."""
         return str(self.claims.get("iss", ""))
 
     @property
@@ -159,54 +165,58 @@ def validate_token(
     in ``required`` must appear in ``scp`` or ``roles``.
     """
     now = now or datetime.now(UTC)
-    checks: list[Check] = []
-
-    expires = token.expires_at
-    if expires is None:
-        checks.append(Check("expiry", "fail", "no exp claim"))
-    elif expires <= now:
-        checks.append(Check("expiry", "fail", f"expired {format_duration(now - expires)} ago"))
-    elif expires - now <= expiry_warning:
-        checks.append(Check("expiry", "warn", f"expires in {format_duration(expires - now)}"))
-    else:
-        checks.append(Check("expiry", "pass", f"expires in {format_duration(expires - now)}"))
-
+    checks = [_expiry_check(token.expires_at, now, expiry_warning)]
     not_before = token.not_before
     if not_before is not None and not_before - now > clock_skew:
-        checks.append(
-            Check("not-before", "fail", f"not valid for {format_duration(not_before - now)}")
-        )
-
+        wait = format_duration(not_before - now)
+        checks.append(Check("not-before", "fail", f"not valid for {wait}"))
     if token.tenant_id:
-        if token.tenant_id.lower() in token.issuer.lower():
-            checks.append(Check("issuer", "pass", token.issuer))
-        else:
-            checks.append(
-                Check("issuer", "fail", f"{token.issuer!r} does not match tid {token.tenant_id}")
-            )
-
+        checks.append(_issuer_check(token))
     if tenant_id is not None:
-        if token.tenant_id.lower() == tenant_id.lower():
-            checks.append(Check("tenant", "pass", token.tenant_id))
-        else:
-            checks.append(
-                Check("tenant", "fail", f"tid {token.tenant_id or '(none)'}, expected {tenant_id}")
-            )
-
+        checks.append(_tenant_check(token, tenant_id))
     if resource is not None:
         checks.append(_audience_check(token, resource))
-
-    granted = {permission.casefold() for permission in (*token.scopes, *token.roles)}
-    if resource is not None:
         relevant = [item for item in requirements if item.resource == resource.key]
-        checks.extend(_permission_checks(relevant, granted, {*token.scopes, *token.roles}))
-    for permission in required:
-        if permission.casefold() in granted:
-            checks.append(Check(f"requires {permission}", "pass", "present"))
-        else:
-            checks.append(Check(f"requires {permission}", "fail", "not in scp or roles"))
-
+        granted = {*token.scopes, *token.roles}
+        checks.extend(_permission_checks(relevant, _folded(granted), granted))
+    checks.extend(_required_checks(required, _folded({*token.scopes, *token.roles})))
     return checks
+
+
+def _expiry_check(expires: datetime | None, now: datetime, warning: timedelta) -> Check:
+    if expires is None:
+        return Check("expiry", "fail", "no exp claim")
+    if expires <= now:
+        return Check("expiry", "fail", f"expired {format_duration(now - expires)} ago")
+    status: Status = "warn" if expires - now <= warning else "pass"
+    return Check("expiry", status, f"expires in {format_duration(expires - now)}")
+
+
+def _issuer_check(token: DecodedToken) -> Check:
+    """The issuer names the token's own tenant, as Entra's always does."""
+    if token.tenant_id.lower() in token.issuer.lower():
+        return Check("issuer", "pass", token.issuer)
+    return Check("issuer", "fail", f"{token.issuer!r} does not match tid {token.tenant_id}")
+
+
+def _tenant_check(token: DecodedToken, tenant_id: str) -> Check:
+    if token.tenant_id.lower() == tenant_id.lower():
+        return Check("tenant", "pass", token.tenant_id)
+    return Check("tenant", "fail", f"tid {token.tenant_id or '(none)'}, expected {tenant_id}")
+
+
+def _required_checks(required: Iterable[str], granted: set[str]) -> list[Check]:
+    """One check per permission that must be in ``scp`` or ``roles`` (``granted``, folded)."""
+    return [
+        Check(f"requires {permission}", "pass", "present")
+        if permission.casefold() in granted
+        else Check(f"requires {permission}", "fail", "not in scp or roles")
+        for permission in required
+    ]
+
+
+def _folded(permissions: Iterable[str]) -> set[str]:
+    return {permission.casefold() for permission in permissions}
 
 
 def passed(checks: Iterable[Check], *, strict: bool = False) -> bool:

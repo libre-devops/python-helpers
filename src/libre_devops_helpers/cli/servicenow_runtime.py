@@ -31,7 +31,13 @@ from libre_devops_helpers.servicenow.config import (
 )
 from libre_devops_helpers.servicenow.instance import InstanceClient
 
-_C = TypeVar("_C")
+
+class _Closeable(Protocol):
+    def close(self) -> None:
+        """Release the connection pool."""
+
+
+_C = TypeVar("_C", bound=_Closeable)
 
 
 class Host(Protocol):
@@ -40,14 +46,38 @@ class Host(Protocol):
     A Protocol, so this module does not import runtime.py, which imports this one.
     """
 
-    environ: Mapping[str, str]
-    session: requests.Session | None
-    token_store: TokenStore | None
-    notify: Callable[[str], None]
-    interactive: Callable[[], bool]
-    ask: Callable[[str, bool], str]
-    has_browser: Callable[[], bool]
-    open_browser: Callable[[str], object]
+    # Read-only properties, so a dataclass's plain fields satisfy them.
+    @property
+    def environ(self) -> Mapping[str, str]:
+        """The environment variables the command sees."""
+
+    @property
+    def session(self) -> requests.Session | None:
+        """The HTTP session to use, or None for each client's own (tests pass one)."""
+
+    @property
+    def token_store(self) -> TokenStore | None:
+        """Where sign-ins are kept, instead of each profile's token_cache (tests pass one)."""
+
+    @property
+    def notify(self) -> Callable[[str], None]:
+        """Shows a sign-in prompt, such as a link to open, to the person."""
+
+    @property
+    def interactive(self) -> Callable[[], bool]:
+        """Whether someone is there to answer a question."""
+
+    @property
+    def ask(self) -> Callable[[str, bool], str]:
+        """Asks the person a question, hiding what they type when told to."""
+
+    @property
+    def has_browser(self) -> Callable[[], bool]:
+        """Whether a browser can be opened here."""
+
+    @property
+    def open_browser(self) -> Callable[[str], object]:
+        """Opens a link in a browser."""
 
     def optional_config_file(self) -> ConfigFile | None:
         """The config file, or None when there is none."""
@@ -106,6 +136,7 @@ class ServiceNowRuntime:
         return selected
 
     def credential(self, profile: Profile) -> Credential:
+        """The credential for ``profile``, made once in a run and reused."""
         if profile.name not in self._credentials:
             runtime = self.runtime
             self._credentials[profile.name] = credential_for(
@@ -123,17 +154,24 @@ class ServiceNowRuntime:
         return self._credentials[profile.name]
 
     def tables(self, profile: Profile) -> TableClient:
+        """A Table API client for ``profile``, signed in by its credential, closed when the command
+        ends."""
         credential = self.credential(profile)
-        options = {"session": self.runtime.session, "verify": self.runtime.verify()}
+        session, verify = self.runtime.session, self.runtime.verify()
         if isinstance(credential, BasicCredential):
             client = TableClient.create(
-                profile.instance, credential.authorization, scheme="Basic", **options
+                profile.instance,
+                credential.authorization,
+                scheme="Basic",
+                session=session,
+                verify=verify,
             )
         else:
             client = TableClient.create(
                 profile.instance,
                 token_source(self.tokens(profile), profile.instance, ""),
-                **options,
+                session=session,
+                verify=verify,
             )
         return self.runtime.track(client)
 
@@ -150,6 +188,7 @@ class ServiceNowRuntime:
         return self._tokens[profile.name]
 
     def instance(self, profile: Profile) -> InstanceClient:
+        """An instance client for ``profile``, over its Table API client."""
         return InstanceClient(self.tables(profile))
 
     @staticmethod

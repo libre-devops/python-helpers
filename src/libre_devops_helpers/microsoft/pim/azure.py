@@ -10,16 +10,12 @@ those inherited from above.
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from typing import Any, Self
+from typing import Any
 
-import requests
-
-from libre_devops_helpers.core.auth import TokenProvider, token_source
-from libre_devops_helpers.core.errors import LdoError, NotFoundError
-from libre_devops_helpers.core.http import ApiClient
-from libre_devops_helpers.core.util import is_guid, odata_string, parse_datetime
-from libre_devops_helpers.microsoft.clouds import PUBLIC
-from libre_devops_helpers.microsoft.config import Profile
+from libre_devops_helpers.core import fields
+from libre_devops_helpers.core.errors import InputError, NotFoundError
+from libre_devops_helpers.core.util import odata_string, require_guid
+from libre_devops_helpers.microsoft.api_clients import ArmServiceClient
 from libre_devops_helpers.microsoft.pim.models import PimAssignment, PimRequest, PimSettings
 from libre_devops_helpers.microsoft.pim.rules import settings_from_rules
 
@@ -28,52 +24,10 @@ ROLES_API = "2022-04-01"
 _AUTHZ = "providers/Microsoft.Authorization"
 
 
-class AzurePimClient:
+class AzurePimClient(ArmServiceClient):
     """PIM for Azure resources. Close it (or use ``with``) when done."""
 
-    def __init__(self, api: ApiClient) -> None:
-        self.api = api
-
-    @classmethod
-    def create(
-        cls,
-        tokens: TokenProvider,
-        tenant_id: str,
-        *,
-        arm_url: str = PUBLIC.arm_url,
-        verify: bool | str = True,
-        session: requests.Session | None = None,
-    ) -> AzurePimClient:
-        api = ApiClient(
-            arm_url,
-            token_source(tokens, arm_url.rstrip("/") + "/", tenant_id),
-            name="Azure PIM",
-            verify=verify,
-            session=session,
-        )
-        return cls(api)
-
-    @classmethod
-    def for_profile(
-        cls,
-        profile: Profile,
-        tokens: TokenProvider,
-        *,
-        verify: bool | str = True,
-        session: requests.Session | None = None,
-    ) -> AzurePimClient:
-        return cls.create(
-            tokens, profile.tenant_id, arm_url=profile.cloud.arm_url, verify=verify, session=session
-        )
-
-    def close(self) -> None:
-        self.api.close()
-
-    def __enter__(self) -> Self:
-        return self
-
-    def __exit__(self, *exc_info: object) -> None:
-        self.close()
+    API_NAME = "Azure PIM"
 
     def eligible(
         self, *, principal_id: str | None = None, scopes: Iterable[str] = ()
@@ -130,8 +84,7 @@ class AzurePimClient:
         )
         if not items:
             raise NotFoundError(f"no PIM settings for {role!r} at {scope}")
-        properties = items[0].get("properties")
-        properties = properties if isinstance(properties, Mapping) else {}
+        properties = fields.mapping(items[0].get("properties"))
         rules = properties.get("effectiveRules") or []
         return settings_from_rules("azure", role, scope, rules if isinstance(rules, list) else [])
 
@@ -161,59 +114,56 @@ class AzurePimClient:
 
 
 def _assignment(item: Mapping[str, Any], state: str) -> PimAssignment:
-    properties = _map(item.get("properties"))
-    expanded = _map(properties.get("expandedProperties"))
-    principal = _map(expanded.get("principal"))
-    role = _map(expanded.get("roleDefinition"))
-    scope = _map(expanded.get("scope"))
+    properties = fields.mapping(item.get("properties"))
+    expanded = fields.mapping(properties.get("expandedProperties"))
+    principal = fields.mapping(expanded.get("principal"))
+    role = fields.mapping(expanded.get("roleDefinition"))
+    scope = fields.mapping(expanded.get("scope"))
     return PimAssignment(
         area="azure",
         state="eligible" if state == "eligible" else "active",
-        role=str(role.get("displayName") or properties.get("roleDefinitionId") or ""),
-        scope=str(scope.get("displayName") or properties.get("scope") or ""),
-        principal_id=str(properties.get("principalId") or ""),
-        principal_name=str(principal.get("displayName") or principal.get("email") or ""),
-        member_type=str(properties.get("memberType") or ""),
-        assignment_type=str(properties.get("assignmentType") or ""),
-        starts=parse_datetime(properties.get("startDateTime")),
-        ends=parse_datetime(properties.get("endDateTime")),
+        role=fields.text(role, "displayName") or fields.text(properties, "roleDefinitionId"),
+        scope=fields.text(scope, "displayName") or fields.text(properties, "scope"),
+        principal_id=fields.text(properties, "principalId"),
+        principal_name=fields.text(principal, "displayName") or fields.text(principal, "email"),
+        member_type=fields.text(properties, "memberType"),
+        assignment_type=fields.text(properties, "assignmentType"),
+        starts=fields.when(properties, "startDateTime"),
+        ends=fields.when(properties, "endDateTime"),
         raw=dict(item),
     )
 
 
 def _request(item: Mapping[str, Any]) -> PimRequest:
-    properties = _map(item.get("properties"))
-    expanded = _map(properties.get("expandedProperties"))
-    schedule = _map(properties.get("scheduleInfo"))
-    expiration = _map(schedule.get("expiration"))
-    ticket = _map(properties.get("ticketInfo"))
+    properties = fields.mapping(item.get("properties"))
+    expanded = fields.mapping(properties.get("expandedProperties"))
+    role = fields.mapping(expanded.get("roleDefinition"))
+    scope = fields.mapping(expanded.get("scope"))
+    principal = fields.mapping(expanded.get("principal"))
+    schedule = fields.mapping(properties.get("scheduleInfo"))
+    expiration = fields.mapping(schedule.get("expiration"))
+    ticket = fields.mapping(properties.get("ticketInfo"))
     return PimRequest(
         area="azure",
-        id=str(item.get("id") or ""),
-        action=str(properties.get("requestType") or ""),
-        status=str(properties.get("status") or ""),
-        role=str(_map(expanded.get("roleDefinition")).get("displayName") or ""),
-        scope=str(_map(expanded.get("scope")).get("displayName") or properties.get("scope") or ""),
-        principal_id=str(properties.get("principalId") or ""),
-        principal_name=str(_map(expanded.get("principal")).get("displayName") or ""),
-        justification=str(properties.get("justification") or ""),
-        created=parse_datetime(properties.get("createdOn")),
-        starts=parse_datetime(schedule.get("startDateTime")),
-        ends=parse_datetime(expiration.get("endDateTime")),
-        duration=str(expiration.get("duration") or ""),
-        ticket=str(ticket.get("ticketNumber") or ""),
+        id=fields.text(item, "id"),
+        action=fields.text(properties, "requestType"),
+        status=fields.text(properties, "status"),
+        role=fields.text(role, "displayName"),
+        scope=fields.text(scope, "displayName") or fields.text(properties, "scope"),
+        principal_id=fields.text(properties, "principalId"),
+        principal_name=fields.text(principal, "displayName"),
+        justification=fields.text(properties, "justification"),
+        created=fields.when(properties, "createdOn"),
+        starts=fields.when(schedule, "startDateTime"),
+        ends=fields.when(expiration, "endDateTime"),
+        duration=fields.text(expiration, "duration"),
+        ticket=fields.text(ticket, "ticketNumber"),
         raw=dict(item),
     )
 
 
-def _map(value: object) -> Mapping[str, Any]:
-    return value if isinstance(value, Mapping) else {}
-
-
 def _guid(value: str) -> str:
-    if not is_guid(value):
-        raise LdoError(f"not an object id: {value!r}")
-    return value.strip().lower()
+    return require_guid(value, "an object id")
 
 
 def _scope(value: str) -> str:
@@ -222,17 +172,17 @@ def _scope(value: str) -> str:
     if not (
         scope.startswith("/subscriptions/") or scope.startswith("/providers/Microsoft.Management/")
     ):
-        raise LdoError(
+        raise InputError(
             f"not an Azure scope: {value!r}",
             hint="use /subscriptions/<id>[/resourceGroups/<name>...] or a management group",
         )
     if ".." in scope or "://" in scope:
-        raise LdoError(f"not an Azure scope: {value!r}")
+        raise InputError(f"not an Azure scope: {value!r}")
     return scope
 
 
 def _scopes(values: Iterable[str]) -> list[str]:
     scopes = [_scope(value) for value in values]
     if not scopes:
-        raise LdoError("a named principal needs at least one scope to search")
+        raise InputError("a named principal needs at least one scope to search")
     return scopes

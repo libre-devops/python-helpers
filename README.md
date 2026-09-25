@@ -41,13 +41,13 @@ PowerShell module, and importable as a library too.
 | `ldo devices` | check a list of devices across Entra, Defender and Intune, watch until they are all there, show one, read Defender Antivirus versions | [devices](docs/devices.md) |
 | `ldo entra` | devices and whether they are in a group, users, groups, roles, sign-ins, app credentials, Conditional Access; tokens | [entra](docs/entra.md) |
 | `ldo intune` | managed devices: compliance, last sync, owner | [entra](docs/entra.md) |
-| `ldo xdr` | Defender machines, alerts, vulnerabilities, indicators, Advanced Hunting | [defender](docs/defender.md) |
+| `ldo xdr` | Defender machines, alerts, vulnerabilities, indicators, Advanced Hunting, a device's timeline, custom detection rules (and their export to YAML) | [defender](docs/defender.md) |
 | `ldo xdr incidents` | the Defender XDR queue, Sentinel's included: top, latest, between days, summary | [defender](docs/defender.md#incidents-sentinels-included) |
 | `ldo graph` | any Graph GET, objects by name, `whoami`, a Graph token, hunting | [graph](docs/graph.md) |
 | `ldo azure` | subscriptions, Resource Graph, role assignments, Defender for Cloud | [azure](docs/azure.md) |
 | `ldo azure automation` | Automation accounts: runbook jobs, and each job's logs and output | [azure](docs/azure.md#automation) |
 | `ldo keyvault` | secrets, certificates and keys close to expiry | [azure](docs/azure.md#key-vault) |
-| `ldo logs` | KQL against a Log Analytics or Sentinel workspace | [azure](docs/azure.md#log-analytics) |
+| `ldo logs` | KQL against a Log Analytics or Sentinel workspace, and which tables are receiving data | [azure](docs/azure.md#log-analytics) |
 | `ldo pim` | eligible, active and standing access, requests, approvals, activation settings | [pim](docs/pim.md) |
 | `ldo logicapp` | offline checks, export and validation for Consumption Logic Apps and Sentinel playbooks | [logic apps](docs/logic-apps.md) |
 | `ldo snow` | ServiceNow: sign in, whoami, the instance, applications, a token | [servicenow](docs/servicenow.md) |
@@ -56,8 +56,9 @@ PowerShell module, and importable as a library too.
 | `ldo json` | pretty-print any JSON (`az rest ... \| ldo json`) in colour, or as YAML | [configuration](docs/configuration.md#json-yaml-and-logs) |
 | `ldo profiles`, `ldo config` | your profiles, and the config file | [configuration](docs/configuration.md) |
 
-Every command takes `-p` for a profile and `-o table|json|csv`, and lists of names from
-arguments, stdin, a text file, or a column of a CSV or Excel workbook.
+Every command takes `-p` for a profile and `-o table|json|csv|tsv`, lists take `--sort` and
+`--unique` by column, and lists of names come from arguments, stdin, a text file, or a
+column of a CSV or Excel workbook.
 
 ---
 

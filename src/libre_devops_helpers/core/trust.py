@@ -2,7 +2,7 @@
 
 By default every call trusts three sets together:
 
-- the public roots ``requests`` ships (certifi);
+- the public roots ``requests`` trusts (certifi's);
 - the operating system's certificate store, where IT installs a TLS-inspecting proxy's
   root: the Windows store, the macOS system keychains, or the Linux system bundle;
 - the extra certificates the config file's ``ca_bundle`` names.
@@ -31,7 +31,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-import requests.certs
+import requests.utils
 
 from libre_devops_helpers.core import brand
 from libre_devops_helpers.core.errors import ConfigError
@@ -168,7 +168,7 @@ def _loadable(certificates: list[str]) -> list[str]:
 
 def build(extra: Path | None = None, *, system: list[str] | None = None) -> tuple[str, Bundle]:
     """The combined bundle's text, and its counts (its path is filled in by ``resolve``)."""
-    public = split_pem(Path(requests.certs.where()).read_text(encoding="utf-8"))
+    public = split_pem(Path(requests.utils.DEFAULT_CA_BUNDLE_PATH).read_text(encoding="utf-8"))
     seen = dict.fromkeys(public)
     from_system = [
         cert for cert in _loadable(split_pem("\n".join(system or []))) if cert not in seen

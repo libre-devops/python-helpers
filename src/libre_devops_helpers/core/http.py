@@ -43,6 +43,9 @@ class ApiClient:
     With ``token=None`` no Authorization header is sent; only then may ``allow_http``
     permit a plain http base URL on a loopback or link-local host, which is what the
     managed identity endpoints use.
+
+    The proxy and certificates follow ``core.network``: ``network_settings`` when given,
+    else the process's own (``network.configure``).
     """
 
     def __init__(
@@ -61,6 +64,7 @@ class ApiClient:
         sleep: Callable[[float], None] = time.sleep,
         allow_http: bool = False,
         auth_scheme: str = "Bearer",
+        network_settings: network.NetworkSettings | None = None,
     ) -> None:
         parts = urlsplit(base_url)
         if not parts.netloc or parts.scheme not in {"https", "http"}:
@@ -89,6 +93,7 @@ class ApiClient:
         # True means the combined bundle core.network resolves (the public roots, the OS
         # store and the config's ca_bundle); a path means that bundle exactly.
         self._verify = verify
+        self._network = network_settings
         self._timeout = timeout
         self._max_attempts = max_attempts
         self._backoff = backoff
@@ -247,8 +252,8 @@ class ApiClient:
                     json=json_body,
                     data=form,
                     timeout=self._timeout,
-                    verify=network.ca_bundle().path if self._verify is True else self._verify,
-                    proxies=network.requests_proxies(url),
+                    verify=self._verify_with(),
+                    proxies=network.requests_proxies(url, self._network),
                     allow_redirects=False,
                 )
             except (requests.ConnectionError, requests.Timeout) as exc:
@@ -276,6 +281,10 @@ class ApiClient:
                 continue
             raise error_from_response(self.name, response)
 
+    def _verify_with(self) -> bool | str:
+        """What requests verifies against: the resolved bundle, or what was asked for."""
+        return network.ca_bundle(self._network).path if self._verify is True else self._verify
+
     def _wait(self, attempt: int, retry_after: float | None, reason: str) -> None:
         # A server-directed Retry-After wins over the backoff (retrying earlier just
         # throttles again), capped so a broken server cannot stall the run.
@@ -283,7 +292,8 @@ class ApiClient:
             delay = min(self._max_retry_after, retry_after)
         else:
             delay = min(self._max_backoff, self._backoff * 2 ** (attempt - 1))
-            delay += random.uniform(0, self._backoff / 2)
+            # Jitter, so clients that failed together do not retry together; not secret.
+            delay += random.uniform(0, self._backoff / 2)  # noqa: S311
         log.warning(
             "%s: %s on attempt %d of %d, retrying in %.1fs",
             self.name,
@@ -417,3 +427,24 @@ def _is_local(host: str) -> bool:
 
 def _path(url: str) -> str:
     return urlsplit(url).path
+
+
+class ServiceClient:
+    """A client for one service's API, built on an ``ApiClient`` (``self.api``).
+
+    Every service client (Entra, Defender, a Key Vault, ServiceNow's tables, ...) is one:
+    close it, or use it in a ``with`` block, to release the HTTP session it made.
+    """
+
+    def __init__(self, api: ApiClient) -> None:
+        self.api = api
+
+    def close(self) -> None:
+        """Close the HTTP session, when this client made it."""
+        self.api.close()
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        self.close()

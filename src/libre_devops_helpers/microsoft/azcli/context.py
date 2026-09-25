@@ -7,7 +7,7 @@ they request tokens with an explicit ``--tenant``.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
 from libre_devops_helpers.microsoft.azcli.client import Account, AzCli
@@ -35,11 +35,13 @@ def find_account(accounts: Iterable[Account], profile: Profile) -> Account | Non
     in_tenant = [account for account in accounts if account.tenant_id == profile.tenant_id]
     if profile.subscription_id:
         return next((a for a in in_tenant if a.id == profile.subscription_id), None)
-    for preferred in (
+    # The account az would use, else a tenant-level one, else any enabled one, else any.
+    preferences: tuple[Callable[[Account], bool], ...] = (
         lambda a: a.is_default,
         lambda a: a.tenant_level,
         lambda a: a.state == "Enabled",
-    ):
+    )
+    for preferred in preferences:
         match = next((a for a in in_tenant if preferred(a)), None)
         if match is not None:
             return match

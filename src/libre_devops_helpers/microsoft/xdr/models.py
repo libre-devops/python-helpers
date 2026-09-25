@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from libre_devops_helpers.core.util import parse_datetime
+from libre_devops_helpers.core import fields
 
 
 @dataclass(frozen=True)
@@ -35,23 +35,24 @@ class Machine:
 
     @classmethod
     def from_json(cls, data: Mapping[str, Any]) -> Machine:
+        """A machine as Defender for Endpoint returns it."""
         tags = data.get("machineTags")
         return cls(
-            id=str(data.get("id", "")),
-            computer_dns_name=str(data.get("computerDnsName") or ""),
-            onboarding_status=str(data.get("onboardingStatus") or ""),
-            health_status=str(data.get("healthStatus") or ""),
-            last_seen=parse_datetime(data.get("lastSeen")),
-            first_seen=parse_datetime(data.get("firstSeen")),
-            os_platform=str(data.get("osPlatform") or ""),
-            os_version=str(data.get("osVersion") or ""),
-            agent_version=str(data.get("version") or ""),
+            id=fields.text(data, "id"),
+            computer_dns_name=fields.text(data, "computerDnsName"),
+            onboarding_status=fields.text(data, "onboardingStatus"),
+            health_status=fields.text(data, "healthStatus"),
+            last_seen=fields.when(data, "lastSeen"),
+            first_seen=fields.when(data, "firstSeen"),
+            os_platform=fields.text(data, "osPlatform"),
+            os_version=fields.text(data, "osVersion"),
+            agent_version=fields.text(data, "version"),
             machine_tags=tuple(str(tag) for tag in tags) if isinstance(tags, list) else (),
-            risk_score=str(data.get("riskScore") or ""),
-            exposure_level=str(data.get("exposureLevel") or ""),
-            last_ip_address=str(data.get("lastIpAddress") or ""),
-            aad_device_id=str(data.get("aadDeviceId") or ""),
-            device_group=str(data.get("rbacGroupName") or ""),
+            risk_score=fields.text(data, "riskScore"),
+            exposure_level=fields.text(data, "exposureLevel"),
+            last_ip_address=fields.text(data, "lastIpAddress"),
+            aad_device_id=fields.text(data, "aadDeviceId"),
+            device_group=fields.text(data, "rbacGroupName"),
             raw=dict(data),
         )
 
@@ -71,16 +72,13 @@ class MachineLookup:
 
     @property
     def found(self) -> bool:
+        """Whether Defender has any record with the name."""
         return bool(self.records)
 
     @property
     def machine(self) -> Machine | None:
         """The newest record, which is the one to trust."""
         return self.records[0] if self.records else None
-
-
-def _text(data: Mapping[str, Any], key: str) -> str:
-    return str(data.get(key) or "")
 
 
 @dataclass(frozen=True)
@@ -102,22 +100,26 @@ class Alert:
 
     @property
     def resolved(self) -> bool:
+        """Whether the alert is resolved."""
         return self.status.casefold() == "resolved"
 
     @classmethod
     def from_json(cls, data: Mapping[str, Any]) -> Alert:
+        """An alert as Defender for Endpoint returns it."""
         return cls(
-            id=_text(data, "id"),
-            title=_text(data, "title"),
-            severity=_text(data, "severity"),
-            status=_text(data, "status"),
-            category=_text(data, "category"),
-            detection_source=_text(data, "detectionSource"),
-            machine_id=_text(data, "machineId"),
-            computer_dns_name=_text(data, "computerDnsName"),
-            incident_id=_text(data, "incidentId"),
-            created=parse_datetime(data.get("alertCreationTime")),
-            last_activity=parse_datetime(data.get("lastEventTime") or data.get("lastUpdateTime")),
+            id=fields.text(data, "id"),
+            title=fields.text(data, "title"),
+            severity=fields.text(data, "severity"),
+            status=fields.text(data, "status"),
+            category=fields.text(data, "category"),
+            detection_source=fields.text(data, "detectionSource"),
+            machine_id=fields.text(data, "machineId"),
+            computer_dns_name=fields.text(data, "computerDnsName"),
+            incident_id=fields.text(data, "incidentId"),
+            created=fields.when(data, "alertCreationTime"),
+            last_activity=(
+                fields.when(data, "lastEventTime") or fields.when(data, "lastUpdateTime")
+            ),
             raw=dict(data),
         )
 
@@ -137,17 +139,19 @@ class Vulnerability:
 
     @classmethod
     def from_json(cls, data: Mapping[str, Any]) -> Vulnerability:
+        """A vulnerability as Defender for Endpoint returns it; ``cvss`` is its CVSS v3 score, when
+        it has one."""
         cvss = data.get("cvssV3")
         return cls(
-            id=_text(data, "id"),
-            name=_text(data, "name"),
-            severity=_text(data, "severity"),
+            id=fields.text(data, "id"),
+            name=fields.text(data, "name"),
+            severity=fields.text(data, "severity"),
             cvss=float(cvss)
             if isinstance(cvss, int | float) and not isinstance(cvss, bool)
             else None,
             exploit_verified=data.get("exploitVerified") is True,
             public_exploit=data.get("publicExploit") is True,
-            published=parse_datetime(data.get("publishedOn")),
+            published=fields.when(data, "publishedOn"),
             raw=dict(data),
         )
 
@@ -168,14 +172,15 @@ class Indicator:
 
     @classmethod
     def from_json(cls, data: Mapping[str, Any]) -> Indicator:
+        """A custom indicator as Defender for Endpoint returns it."""
         return cls(
-            id=_text(data, "id"),
-            value=_text(data, "indicatorValue"),
-            indicator_type=_text(data, "indicatorType"),
-            action=_text(data, "action"),
-            title=_text(data, "title"),
-            severity=_text(data, "severity"),
-            expires=parse_datetime(data.get("expirationTime")),
-            created_by=_text(data, "createdBy"),
+            id=fields.text(data, "id"),
+            value=fields.text(data, "indicatorValue"),
+            indicator_type=fields.text(data, "indicatorType"),
+            action=fields.text(data, "action"),
+            title=fields.text(data, "title"),
+            severity=fields.text(data, "severity"),
+            expires=fields.when(data, "expirationTime"),
+            created_by=fields.text(data, "createdBy"),
             raw=dict(data),
         )

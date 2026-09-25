@@ -16,6 +16,7 @@ Microsoft and covers most of `ldo`, but not all of it:
 | `xdr` machines, alerts, vulns, indicators, `--defender`, `--tag`, `--device-group` | Defender | the read permissions, or a Defender role | yes, through your Defender role |
 | `xdr hunt`, `graph hunt`, `devices av-signature` | Graph | `ThreatHunting.Read.All`, and a Defender XDR role | no; `--endpoint` does, for the device tables |
 | `xdr incidents ...` | Graph | `SecurityIncident.Read.All`, and a role such as Security Reader | no |
+| `xdr detections ...` | Graph (beta) | `CustomDetection.Read.All`, and a Defender XDR role | only when an admin consents it for the Azure CLI's app |
 | `graph get ...` | Graph | whatever the path reads | directory, users, groups, devices, apps: yes |
 | `azure ...`, `azure automation ...`, `logicapp export` | ARM | Reader | yes |
 | `logicapp validate` | ARM | `Microsoft.Logic/locations/workflows/validate/action` (Logic App Contributor) | yes |

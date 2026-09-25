@@ -14,7 +14,7 @@ from typing import Any, Self
 import requests
 
 from libre_devops_helpers.core.errors import ApiError, InputError
-from libre_devops_helpers.core.http import ApiClient
+from libre_devops_helpers.core.http import ApiClient, ServiceClient
 
 log = logging.getLogger(__name__)
 
@@ -37,11 +37,8 @@ def condition(field: str, value: str, operator: str = "=") -> str:
     return f"{field}{operator}{value}"
 
 
-class TableClient:
+class TableClient(ServiceClient):
     """Reads records through ``/api/now/table``, for one instance and one sign-in."""
-
-    def __init__(self, api: ApiClient) -> None:
-        self.api = api
 
     @classmethod
     def create(
@@ -64,9 +61,6 @@ class TableClient:
                 auth_scheme=scheme,
             )
         )
-
-    def close(self) -> None:
-        self.api.close()
 
     def records(
         self,

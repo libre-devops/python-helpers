@@ -8,24 +8,22 @@ token scopes. The workspace is named by its workspace id (the GUID the portal ca
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import Any, Self
+from typing import Any
 
 import requests
 
+from libre_devops_helpers.core import fields
 from libre_devops_helpers.core.auth import TokenProvider, token_source
-from libre_devops_helpers.core.errors import ApiError, LdoError
-from libre_devops_helpers.core.http import ApiClient
+from libre_devops_helpers.core.errors import ApiError, InputError
+from libre_devops_helpers.core.http import ApiClient, ServiceClient
 from libre_devops_helpers.core.tables import QueryResult
-from libre_devops_helpers.core.util import is_guid
+from libre_devops_helpers.core.util import require_guid
 from libre_devops_helpers.microsoft.clouds import PUBLIC
 from libre_devops_helpers.microsoft.config import Profile
 
 
-class LogAnalyticsClient:
+class LogAnalyticsClient(ServiceClient):
     """Log Analytics queries. Close it (or use ``with``) when done."""
-
-    def __init__(self, api: ApiClient) -> None:
-        self.api = api
 
     @classmethod
     def create(
@@ -67,15 +65,6 @@ class LogAnalyticsClient:
             session=session,
         )
 
-    def close(self) -> None:
-        self.api.close()
-
-    def __enter__(self) -> Self:
-        return self
-
-    def __exit__(self, *exc_info: object) -> None:
-        self.close()
-
     def query(
         self, workspace_id: str, query: str, *, timespan: timedelta | None = None
     ) -> QueryResult:
@@ -85,13 +74,13 @@ class LogAnalyticsClient:
         the query itself. A partial result comes back with the service's error in
         ``warnings`` rather than failing.
         """
-        if not is_guid(workspace_id):
-            raise LdoError(
-                f"not a Log Analytics workspace id: {workspace_id!r}",
-                hint="use the workspace's Workspace ID (a GUID), not its resource id",
-            )
+        workspace_id = require_guid(
+            workspace_id,
+            "a Log Analytics workspace id",
+            hint="use the workspace's Workspace ID (a GUID), not its resource id",
+        )
         if not query.strip():
-            raise LdoError("the Log Analytics query is empty")
+            raise InputError("the Log Analytics query is empty")
         body: dict[str, Any] = {"query": query}
         if timespan is not None:
             body["timespan"] = f"PT{int(timespan.total_seconds())}S"
@@ -102,7 +91,7 @@ class LogAnalyticsClient:
         if isinstance(error, dict):
             detail = str(error.get("message") or error.get("code") or "partial result")
             if not isinstance(tables, list) or not tables:
-                raise ApiError(f"Log Analytics: {detail}", code=str(error.get("code") or ""))
+                raise ApiError(f"Log Analytics: {detail}", code=fields.text(error, "code"))
             warnings.append(detail)
         if not isinstance(tables, list) or not tables or not isinstance(tables[0], dict):
             return QueryResult((), (), warnings=tuple(warnings))

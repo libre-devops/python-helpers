@@ -21,7 +21,9 @@ from libre_devops_helpers.microsoft.resources import Requirement
 
 REQUIREMENTS = (
     Requirement(
-        "hunting (xdr hunt, devices av-signature)", "graph", (("ThreatHunting.Read.All",),)
+        "hunting (xdr hunt, xdr timeline, devices av-signature)",
+        "graph",
+        (("ThreatHunting.Read.All",),),
     ),
 )
 

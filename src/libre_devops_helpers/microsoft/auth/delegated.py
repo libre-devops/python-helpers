@@ -22,11 +22,8 @@ instead, as the Azure CLI does.
 
 from __future__ import annotations
 
-import base64
-import hashlib
 import http.server
 import logging
-import secrets
 import threading
 import time
 import webbrowser
@@ -37,8 +34,9 @@ from urllib.parse import parse_qs, quote, urlencode, urlsplit
 
 import requests
 
-from libre_devops_helpers.core.auth import AccessToken, utc_now
-from libre_devops_helpers.core.browser import can_launch_browser
+from libre_devops_helpers.core import fields
+from libre_devops_helpers.core.auth import AccessToken, Pkce, utc_now
+from libre_devops_helpers.core.browser import can_launch_browser, open_quietly
 from libre_devops_helpers.core.errors import ApiError, AuthError, LdoError
 from libre_devops_helpers.core.http import ApiClient
 from libre_devops_helpers.core.token_store import MemoryStore, TokenStore
@@ -143,7 +141,7 @@ class _DelegatedCredential:
             flow = self._post(tenant_id, "devicecode", {"scope": self._scope(resource)})
         except ApiError as exc:
             raise AuthError(str(exc), hint=_hint(exc)) from None
-        device_code = str(flow.get("device_code") or "")
+        device_code = fields.text(flow, "device_code")
         if not device_code:
             raise AuthError("the device code response has no device_code")
         self._notify(
@@ -204,6 +202,7 @@ class CodeReceiver(Protocol):
         """The redirect's query parameters, once it arrives within ``timeout`` seconds."""
 
     def close(self) -> None:
+        """Stop listening for the redirect."""
         """Stop listening."""
 
 
@@ -238,6 +237,7 @@ class LoopbackReceiver:
         self.redirect_uri = f"http://localhost:{self._server.server_address[1]}"
 
     def wait(self, timeout: float) -> dict[str, str]:
+        """The redirect's query once the browser arrives; an AuthError after ``timeout`` s."""
         deadline = time.monotonic() + timeout
         while not self._received and time.monotonic() < deadline:
             self._server.handle_request()
@@ -246,6 +246,7 @@ class LoopbackReceiver:
         return dict(self._received)
 
     def close(self) -> None:
+        """Stop listening for the redirect."""
         self._server.server_close()
 
 
@@ -290,13 +291,7 @@ class InteractiveCredential(_DelegatedCredential):
             # Headless: the browser's redirect could never reach this machine's listener.
             self._notify("No web browser here, so signing in with a device code instead.")
             return self._sign_in_with_device_code(resource, tenant_id)
-        verifier = secrets.token_urlsafe(64)
-        challenge = (
-            base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest())
-            .rstrip(b"=")
-            .decode()
-        )
-        state = secrets.token_urlsafe(24)
+        proof = Pkce.new()
         receiver = self._receiver()
         try:
             params = {
@@ -305,40 +300,38 @@ class InteractiveCredential(_DelegatedCredential):
                 "redirect_uri": receiver.redirect_uri,
                 "response_mode": "query",
                 "scope": self._scope(resource),
-                "code_challenge": challenge,
-                "code_challenge_method": "S256",
-                "state": state,
                 "prompt": "select_account",
+                **proof.parameters,
             }
             url = f"{self.login_url}/{quote(tenant_id)}/oauth2/v2.0/authorize?" + urlencode(
                 params, quote_via=quote
             )
             self._notify(f"Sign in to continue (opening your browser): {url}")
-            try:
-                self._open_browser(url)
-            except Exception:
-                log.debug("could not open a browser", exc_info=True)
+            open_quietly(self._open_browser, url)
             query = receiver.wait(self._timeout)
         finally:
             receiver.close()
-        if query.get("state") != state:
-            raise AuthError("the sign-in response did not match this request; start again")
-        if "error" in query:
-            detail = query.get("error_description") or query["error"]
-            raise AuthError(f"sign-in failed: {detail.splitlines()[0]}", hint=_hint_text(detail))
-        code = query.get("code")
-        if not code:
-            raise AuthError("the sign-in response carried no authorisation code")
-        return self._redeem(
-            tenant_id,
-            resource,
-            {
-                "grant_type": "authorization_code",
-                "code": code,
-                "redirect_uri": receiver.redirect_uri,
-                "code_verifier": verifier,
-            },
-        )
+        form = {
+            "grant_type": "authorization_code",
+            "code": _authorisation_code(query, proof.state),
+            "redirect_uri": receiver.redirect_uri,
+            "code_verifier": proof.verifier,
+        }
+        return self._redeem(tenant_id, resource, form)
+
+
+def _authorisation_code(query: Mapping[str, str], state: str) -> str:
+    """The code a browser sign-in came back with, once the answer is known to be to this
+    sign-in (its ``state``) and not a refusal."""
+    if query.get("state") != state:
+        raise AuthError("the sign-in response did not match this request; start again")
+    if "error" in query:
+        detail = query.get("error_description") or query["error"]
+        raise AuthError(f"sign-in failed: {detail.splitlines()[0]}", hint=_hint_text(detail))
+    code = query.get("code")
+    if not code:
+        raise AuthError("the sign-in response carried no authorisation code")
+    return code
 
 
 class DeviceCodeCredential(_DelegatedCredential):

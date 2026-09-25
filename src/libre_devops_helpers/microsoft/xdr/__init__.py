@@ -1,4 +1,5 @@
-"""Defender for Endpoint (Defender XDR): machines, alerts, vulnerabilities, indicators, hunting.
+"""Defender for Endpoint (Defender XDR): machines, alerts, vulnerabilities, indicators,
+hunting, and device timelines (built from Advanced Hunting: see ``timeline``).
 
 Depends only on ``core`` and the shared Microsoft layer. Public API::
 
@@ -20,6 +21,14 @@ from libre_devops_helpers.microsoft.xdr.models import (
     Vulnerability,
 )
 from libre_devops_helpers.microsoft.xdr.permissions import REQUIREMENTS
+from libre_devops_helpers.microsoft.xdr.timeline import (
+    Timeline,
+    TimelineEvent,
+    outside_retention,
+    parse_kinds,
+    read_timeline,
+    timeline_query,
+)
 
 __all__ = [
     "REQUIREMENTS",
@@ -27,7 +36,13 @@ __all__ = [
     "Indicator",
     "Machine",
     "MachineLookup",
+    "Timeline",
+    "TimelineEvent",
     "Vulnerability",
     "XdrClient",
+    "outside_retention",
+    "parse_kinds",
     "parse_severity",
+    "read_timeline",
+    "timeline_query",
 ]

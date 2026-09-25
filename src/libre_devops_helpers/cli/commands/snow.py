@@ -6,11 +6,16 @@ import typer
 
 from libre_devops_helpers.cli import render
 from libre_devops_helpers.cli.exits import ATTENTION
-from libre_devops_helpers.cli.options import OutputOption, get_runtime
+from libre_devops_helpers.cli.options import (
+    OutputOption,
+    SortOption,
+    UniqueOption,
+    get_runtime,
+)
 from libre_devops_helpers.cli.render import Output
 from libre_devops_helpers.cli.runtime import Runtime
 from libre_devops_helpers.core import brand
-from libre_devops_helpers.core.errors import LdoError
+from libre_devops_helpers.core.errors import ConfigError, LdoError
 from libre_devops_helpers.servicenow import OAuthCredential
 from libre_devops_helpers.servicenow import instance as instance_feature
 
@@ -26,6 +31,7 @@ REQUIREMENTS = (*instance_feature.REQUIREMENTS,)
 
 
 def register(app: typer.Typer) -> None:
+    """Add the ``snow`` commands to ``app``."""
     app.add_typer(snow_app)
 
 
@@ -63,7 +69,7 @@ def sign_in(ctx: typer.Context, profile: ProfileOption = None) -> None:
     selected = runtime.profile(profile)
     credential = runtime.credential(selected)
     if not isinstance(credential, OAuthCredential):
-        raise LdoError(
+        raise ConfigError(
             f"profile {selected.name!r} uses basic sign-in, which sends the password each time",
             hint=runtime.oauth_hint(selected),
         )
@@ -236,6 +242,8 @@ def apps(
         bool, typer.Option("--all", help="Include applications that are not active.")
     ] = False,
     profile: ProfileOption = None,
+    sort: SortOption = None,
+    unique: UniqueOption = None,
     output: OutputOption = Output.TABLE,
 ) -> None:
     """List the instance's applications (store and custom), optionally matching SEARCH.

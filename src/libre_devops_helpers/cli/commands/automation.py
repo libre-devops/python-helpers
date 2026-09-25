@@ -12,7 +12,14 @@ import typer
 
 from libre_devops_helpers.cli import render
 from libre_devops_helpers.cli.exits import ATTENTION
-from libre_devops_helpers.cli.options import OutputOption, ProfileOption, duration, get_runtime
+from libre_devops_helpers.cli.options import (
+    OutputOption,
+    ProfileOption,
+    SortOption,
+    UniqueOption,
+    duration,
+    get_runtime,
+)
 from libre_devops_helpers.cli.render import Output
 from libre_devops_helpers.cli.runtime import MicrosoftRuntime
 from libre_devops_helpers.core.errors import InputError, NotFoundError
@@ -67,6 +74,7 @@ JobArgument = Annotated[
 
 
 def register(app: typer.Typer) -> None:
+    """Add the ``automation`` commands to ``app`` (the ``azure`` group)."""
     app.add_typer(automation_app)
 
 
@@ -96,6 +104,8 @@ def accounts(
     ctx: typer.Context,
     subscription: SubscriptionOption = None,
     profile: ProfileOption = None,
+    sort: SortOption = None,
+    unique: UniqueOption = None,
     output: OutputOption = Output.TABLE,
 ) -> None:
     """List the Automation accounts in the subscriptions in scope."""
@@ -133,6 +143,8 @@ def jobs(
     resource_group: GroupOption = None,
     subscription: SubscriptionOption = None,
     profile: ProfileOption = None,
+    sort: SortOption = None,
+    unique: UniqueOption = None,
     output: OutputOption = Output.TABLE,
 ) -> None:
     """List a runbook's recent jobs (runs), newest first: when, how long, and how each ended.
@@ -189,6 +201,8 @@ def logs(
     resource_group: GroupOption = None,
     subscription: SubscriptionOption = None,
     profile: ProfileOption = None,
+    sort: SortOption = None,
+    unique: UniqueOption = None,
     output: OutputOption = Output.TABLE,
 ) -> None:
     """A job's logs, oldest first: its output, warnings, errors and other streams.

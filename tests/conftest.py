@@ -14,12 +14,20 @@ def private_token_cache(tmp_path_factory, monkeypatch):
 
 @pytest.fixture(autouse=True)
 def plain_stderr():
-    """Each test starts with the text log format's stderr, whatever the last one used."""
+    """Each test starts with plain output, whatever the last one used: the text log format's
+    stderr, rows in the order they come, and colour left to the terminal."""
     from libre_devops_helpers.cli import render
+    from libre_devops_helpers.core import colour
 
-    render.structured_output(False)
+    def reset():
+        render.structured_output(False)
+        render.sort_rows(None)
+        render.unique_rows(None)
+        colour.use(None)
+
+    reset()
     yield
-    render.structured_output(False)
+    reset()
 
 
 @pytest.fixture(autouse=True)

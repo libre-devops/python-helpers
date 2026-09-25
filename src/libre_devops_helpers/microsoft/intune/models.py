@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, ClassVar
 
-from libre_devops_helpers.core.util import parse_datetime
+from libre_devops_helpers.core import fields
 
 
 @dataclass(frozen=True)
@@ -36,28 +36,26 @@ class ManagedDevice:
 
     @property
     def compliant(self) -> bool:
+        """Whether Intune rates the device compliant."""
         return self.compliance_state.casefold() == "compliant"
 
     @classmethod
     def from_json(cls, data: Mapping[str, Any]) -> ManagedDevice:
-        def text(key: str) -> str:
-            return str(data.get(key) or "")
-
+        """A managed device as Graph returns it."""
+        linked = fields.text(data, "azureADDeviceId")
         return cls(
-            id=text("id"),
-            device_name=text("deviceName"),
-            operating_system=text("operatingSystem"),
-            os_version=text("osVersion"),
-            compliance_state=text("complianceState"),
-            management_agent=text("managementAgent"),
-            last_sync=parse_datetime(data.get("lastSyncDateTime")),
-            enrolled=parse_datetime(data.get("enrolledDateTime")),
+            id=fields.text(data, "id"),
+            device_name=fields.text(data, "deviceName"),
+            operating_system=fields.text(data, "operatingSystem"),
+            os_version=fields.text(data, "osVersion"),
+            compliance_state=fields.text(data, "complianceState"),
+            management_agent=fields.text(data, "managementAgent"),
+            last_sync=fields.when(data, "lastSyncDateTime"),
+            enrolled=fields.when(data, "enrolledDateTime"),
             # Intune reports an unlinked device with the all-zero GUID.
-            azure_ad_device_id=""
-            if text("azureADDeviceId") == "00000000-0000-0000-0000-000000000000"
-            else text("azureADDeviceId"),
-            user_principal_name=text("userPrincipalName"),
-            serial_number=text("serialNumber"),
-            owner_type=text("managedDeviceOwnerType"),
+            azure_ad_device_id="" if linked == "00000000-0000-0000-0000-000000000000" else linked,
+            user_principal_name=fields.text(data, "userPrincipalName"),
+            serial_number=fields.text(data, "serialNumber"),
+            owner_type=fields.text(data, "managedDeviceOwnerType"),
             raw=dict(data),
         )

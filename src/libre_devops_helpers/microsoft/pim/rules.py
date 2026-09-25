@@ -10,30 +10,34 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from typing import Any
 
+from libre_devops_helpers.core import fields
 from libre_devops_helpers.microsoft.pim.models import Area, PimSettings
 
 
 def settings_from_rules(
     area: Area, role: str, scope: str, rules: Iterable[Mapping[str, Any]]
 ) -> PimSettings:
-    by_id = {str(rule.get("id") or ""): rule for rule in rules if isinstance(rule, Mapping)}
+    """What a role's PIM policy asks of an activation, read from its rules: the longest it may last,
+    and whether it needs MFA, a justification, a ticket, an approval (and whose) or an
+    authentication context."""
+    by_id = {fields.text(rule, "id"): rule for rule in rules if isinstance(rule, Mapping)}
     activation = by_id.get("Expiration_EndUser_Assignment", {})
     enablement = by_id.get("Enablement_EndUser_Assignment", {})
     approval = by_id.get("Approval_EndUser_Assignment", {})
     context = by_id.get("AuthenticationContext_EndUser_Assignment", {})
     enabled = {str(item).casefold() for item in enablement.get("enabledRules") or []}
-    setting = approval.get("setting") if isinstance(approval.get("setting"), Mapping) else {}
+    setting = fields.mapping(approval.get("setting"))
     return PimSettings(
         area=area,
         role=role,
         scope=scope,
-        max_activation=str(activation.get("maximumDuration") or ""),
+        max_activation=fields.text(activation, "maximumDuration"),
         requires_mfa="multifactorauthentication" in enabled,
         requires_justification="justification" in enabled,
         requires_ticket="ticketing" in enabled,
         requires_approval=setting.get("isApprovalRequired") is True,
         approvers=tuple(_approvers(setting)),
-        authentication_context=str(context.get("claimValue") or "")
+        authentication_context=fields.text(context, "claimValue")
         if context.get("isEnabled") is True
         else "",
         eligible_expiry=_expiry(by_id.get("Expiration_Admin_Eligibility", {})),

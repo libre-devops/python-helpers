@@ -5,7 +5,6 @@ sign-in, and expects a 2xx: proof the proxy, the certificates and the route all 
 same way every other command's calls go.
 """
 
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Annotated, Any
 
@@ -13,11 +12,18 @@ import typer
 
 from libre_devops_helpers.cli import render
 from libre_devops_helpers.cli.exits import ATTENTION
-from libre_devops_helpers.cli.options import OutputOption, ProfileOption, get_runtime
+from libre_devops_helpers.cli.options import (
+    OutputOption,
+    ProfileOption,
+    SortOption,
+    UniqueOption,
+    get_runtime,
+)
 from libre_devops_helpers.cli.render import Output
 from libre_devops_helpers.cli.runtime import Runtime
 from libre_devops_helpers.core import network
 from libre_devops_helpers.core.errors import ConfigError, LdoError
+from libre_devops_helpers.core.probe import Probe, probe_all
 from libre_devops_helpers.microsoft.clouds import PUBLIC, Cloud
 
 network_app = typer.Typer(
@@ -31,6 +37,9 @@ _OK = range(200, 300)
 
 @dataclass(frozen=True)
 class Endpoint:
+    """A service to try: its name, a URL it answers without a sign-in, the statuses that mean it was
+    reached, and a note to show beside a pass."""
+
     name: str
     url: str
     expect: tuple[int, ...] = tuple(_OK)
@@ -38,6 +47,7 @@ class Endpoint:
 
 
 def register(app: typer.Typer) -> None:
+    """Add the ``network`` commands to ``app``."""
     app.add_typer(network_app, name="network")
 
 
@@ -52,6 +62,8 @@ def network_test(
         float, typer.Option("--timeout", min=1, max=120, help="Seconds to wait for each.")
     ] = 10.0,
     profile: ProfileOption = None,
+    sort: SortOption = None,
+    unique: UniqueOption = None,
     output: OutputOption = Output.TABLE,
 ) -> None:
     """Test the way out to each service: the proxy, the certificates and the route.
@@ -66,62 +78,53 @@ def network_test(
         Endpoint(item, item) for item in _checked_urls(url or [])
     ]
     settings = _settings()
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        probes = list(
-            pool.map(
-                lambda item: network.probe(item.url, expect=item.expect, timeout=timeout), endpoints
-            )
-        )
-    rows: list[list[render.Cell]] = []
-    records: list[dict[str, Any]] = []
-    for endpoint, result in zip(endpoints, probes, strict=True):
-        via = result.route.proxy or f"direct ({result.route.source})"
-        if result.route.source in {"none", "local"} and result.route.proxy is None:
-            via = "direct"
-        detail = result.detail + (f" in {result.elapsed:.2f}s" if result.ok else "")
-        if result.ok and endpoint.note:
-            detail += f" ({endpoint.note})"
-        rows.append(
-            [
-                endpoint.name,
-                via,
-                ("ok", "green") if result.ok else ("failed", "red"),
-                detail,
-            ]
-        )
-        records.append(
-            {
-                "name": endpoint.name,
-                "url": endpoint.url,
-                "proxy": result.route.proxy,
-                "route": result.route.source,
-                "ok": result.ok,
-                "status": result.status,
-                "detail": result.detail,
-                "hint": result.hint,
-                "seconds": result.elapsed,
-            }
-        )
+    probes = probe_all([(item.url, item.expect) for item in endpoints], timeout=timeout)
+    results = list(zip(endpoints, probes, strict=True))
     if output is Output.TABLE:
         render.echo(render.pairs(settings["pairs"]))
         render.echo()
     render.emit(
         output,
         ["ENDPOINT", "VIA", "RESULT", "DETAIL"],
-        rows,
-        {"settings": settings["record"], "endpoints": records},
+        [_probe_row(endpoint, result) for endpoint, result in results],
+        {
+            "settings": settings["record"],
+            "endpoints": [_probe_record(endpoint, result) for endpoint, result in results],
+        },
     )
-    failed = [
-        (endpoint, result)
-        for endpoint, result in zip(endpoints, probes, strict=True)
-        if not result.ok
-    ]
+    failed = [(endpoint, result) for endpoint, result in results if not result.ok]
     for endpoint, result in failed:
         if result.hint:
             render.warn(f"{endpoint.name}: {result.hint}")
     render.note(f"{len(endpoints) - len(failed)} of {len(endpoints)} reachable")
     if failed:
         raise typer.Exit(ATTENTION)
+
+
+def _probe_row(endpoint: Endpoint, result: Probe) -> list[render.Cell]:
+    """ENDPOINT, VIA (the proxy, without its password, or direct), RESULT, DETAIL."""
+    if result.route.proxy is None and result.route.source in {"none", "local"}:
+        via = "direct"
+    else:
+        via = result.route.shown or f"direct ({result.route.source})"
+    detail = result.detail
+    if result.ok:
+        detail += f" in {result.elapsed:.2f}s" + (f" ({endpoint.note})" if endpoint.note else "")
+    return [endpoint.name, via, ("ok", "green") if result.ok else ("failed", "red"), detail]
+
+
+def _probe_record(endpoint: Endpoint, result: Probe) -> dict[str, Any]:
+    return {
+        "name": endpoint.name,
+        "url": endpoint.url,
+        "proxy": result.route.shown,
+        "route": result.route.source,
+        "ok": result.ok,
+        "status": result.status,
+        "detail": result.detail,
+        "hint": result.hint,
+        "seconds": result.elapsed,
+    }
 
 
 def _endpoints(runtime: Runtime, profile_name: str | None) -> list[Endpoint]:
@@ -201,12 +204,12 @@ def _settings() -> dict[str, Any]:
         )
     return {
         "pairs": [
-            ("Proxy", f"{proxy.proxy} ({proxy.source})" if proxy.proxy else "none: direct"),
+            ("Proxy", f"{proxy.shown} ({proxy.source})" if proxy.proxy else "none: direct"),
             ("No proxy", ", ".join(skipped)),
             ("Certificates", trust),
         ],
         "record": {
-            "proxy": proxy.proxy,
+            "proxy": proxy.shown,
             "proxy_source": proxy.source,
             "no_proxy": skipped,
             "ca_bundle": bundle.path,

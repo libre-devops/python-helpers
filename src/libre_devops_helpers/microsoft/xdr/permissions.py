@@ -20,5 +20,9 @@ REQUIREMENTS = (
     ),
     Requirement("xdr vulnerabilities", "mde", (("Vulnerability.Read.All", "Vulnerability.Read"),)),
     Requirement("xdr indicators", "mde", (("Ti.Read.All", "Ti.ReadWrite", "Ti.ReadWrite.All"),)),
-    Requirement("xdr hunting", "mde", (("AdvancedQuery.Read.All", "AdvancedQuery.Read"),)),
+    Requirement(
+        "xdr hunting (hunt, timeline, av-signature with --endpoint)",
+        "mde",
+        (("AdvancedQuery.Read.All", "AdvancedQuery.Read"),),
+    ),
 )

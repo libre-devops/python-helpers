@@ -89,6 +89,7 @@ class Workbook:
         self.close()
 
     def close(self) -> None:
+        """Close the workbook's zip file."""
         self._archive.close()
 
     def sheet(self, name: str) -> Sheet:
@@ -234,7 +235,9 @@ def _elements(
     except (RuntimeError, NotImplementedError, zipfile.BadZipFile) as exc:
         # An encrypted zip entry, or a compression method zipfile lacks.
         raise InputError(f"cannot read {part} in {path}: {exc}") from None
-    parser = ElementTree.XMLPullParser(events=("end",))
+    parser: ElementTree.XMLPullParser[ElementTree.Element] = ElementTree.XMLPullParser(
+        events=("end",)
+    )
     with stream:
         for chunk in _guarded(stream, part, path):
             yield from _parsed(parser, chunk, name, part, path)
@@ -242,7 +245,11 @@ def _elements(
 
 
 def _parsed(
-    parser: ElementTree.XMLPullParser, chunk: bytes | None, name: str, part: str, path: Path
+    parser: ElementTree.XMLPullParser[ElementTree.Element],
+    chunk: bytes | None,
+    name: str,
+    part: str,
+    path: Path,
 ) -> list[ElementTree.Element]:
     """Feed ``chunk`` (``None`` at the end) and take the elements it completed."""
     try:
@@ -250,8 +257,14 @@ def _parsed(
             parser.close()
         else:
             parser.feed(chunk)
-        # A parse error surfaces here, not in feed().
-        return [item for _, item in parser.read_events() if _local(item.tag) == name]
+        # A parse error surfaces here, not in feed(). Asked only for "end" events, each
+        # event is ("end", element); the other shapes are for events not asked for.
+        found = []
+        for event in parser.read_events():
+            item = event[-1]
+            if isinstance(item, ElementTree.Element) and _local(item.tag) == name:
+                found.append(item)
+        return found
     except ElementTree.ParseError as exc:
         raise InputError(f"{path} is damaged: {part}: {exc}") from None
 

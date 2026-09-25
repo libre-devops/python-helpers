@@ -17,7 +17,7 @@ import webbrowser
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol, TypeVar
+from typing import Protocol, TypedDict, TypeVar
 
 import requests
 import typer
@@ -37,6 +37,7 @@ from libre_devops_helpers.microsoft.azure import AzureClient
 from libre_devops_helpers.microsoft.config import SECTION as MICROSOFT
 from libre_devops_helpers.microsoft.config import MicrosoftConfig, Profile
 from libre_devops_helpers.microsoft.config import from_file as microsoft_from_file
+from libre_devops_helpers.microsoft.detections import DetectionsClient
 from libre_devops_helpers.microsoft.entra import EntraClient
 from libre_devops_helpers.microsoft.graph import GraphClient
 from libre_devops_helpers.microsoft.incidents import IncidentsClient
@@ -80,6 +81,29 @@ class _Closeable(Protocol):
 
 
 C = TypeVar("C", bound=_Closeable)
+C_co = TypeVar("C_co", bound=_Closeable, covariant=True)
+
+
+class _ProfileClient(Protocol[C_co]):
+    """A client class, built for a profile: every service client's ``for_profile``."""
+
+    def for_profile(
+        self,
+        profile: Profile,
+        tokens: CachingTokenProvider,
+        *,
+        verify: bool | str,
+        session: requests.Session | None,
+    ) -> C_co:
+        """A client for ``profile``, with its tokens from ``tokens``."""
+        ...
+
+
+class _ClientOptions(TypedDict):
+    """What every client is built with: how to verify TLS, and the session (tests' own)."""
+
+    verify: bool | str
+    session: requests.Session | None
 
 
 @dataclass
@@ -116,12 +140,14 @@ class Runtime:
 
     @property
     def microsoft(self) -> MicrosoftRuntime:
+        """The Microsoft side of this run, made the first time it is asked for."""
         if self._microsoft is None:
             self._microsoft = MicrosoftRuntime(self)
         return self._microsoft
 
     @property
     def servicenow(self) -> ServiceNowRuntime:
+        """The ServiceNow side of this run, made the first time it is asked for."""
         if self._servicenow is None:
             self._servicenow = ServiceNowRuntime(self)
         return self._servicenow
@@ -162,6 +188,7 @@ class Runtime:
         return client
 
     def close(self) -> None:
+        """Close every client this run made, the last made first."""
         while self._closers:
             self._closers.pop()()
 
@@ -268,68 +295,70 @@ class MicrosoftRuntime:
                 render.warn(f"signed in, but could not restore the active account: {exc}")
         return True
 
-    def _options(self) -> dict[str, object]:
+    def _client(self, kind: _ProfileClient[C], profile: Profile) -> C:
+        """A ``kind`` of client for ``profile``, closed when the command ends: every client
+        verifies TLS the same way and takes its tokens from the profile's credential."""
+        client = kind.for_profile(profile, self.tokens(profile), **self._options())
+        return self.runtime.track(client)
+
+    def _options(self) -> _ClientOptions:
         return {"verify": self.runtime.verify(), "session": self.runtime.session}
 
     def entra(self, profile: Profile) -> EntraClient:
-        return self.runtime.track(
-            EntraClient.for_profile(profile, self.tokens(profile), **self._options())
-        )
+        """An Entra ID client for ``profile`` (through Graph), closed when the command ends."""
+        return self._client(EntraClient, profile)
 
     def graph(self, profile: Profile) -> GraphClient:
-        return self.runtime.track(
-            GraphClient.for_profile(profile, self.tokens(profile), **self._options())
-        )
+        """A Graph client for ``profile``, closed when the command ends."""
+        return self._client(GraphClient, profile)
 
     def automation(self, profile: Profile) -> AutomationClient:
-        return self.runtime.track(
-            AutomationClient.for_profile(profile, self.tokens(profile), **self._options())
-        )
+        """An Azure Automation client for ``profile``, closed when the command ends."""
+        return self._client(AutomationClient, profile)
 
     def logicapps(self, profile: Profile) -> LogicAppsClient:
-        return self.runtime.track(
-            LogicAppsClient.for_profile(profile, self.tokens(profile), **self._options())
-        )
+        """A Logic Apps client for ``profile``, closed when the command ends."""
+        return self._client(LogicAppsClient, profile)
 
     def incidents(self, profile: Profile) -> IncidentsClient:
-        return self.runtime.track(
-            IncidentsClient.for_profile(profile, self.tokens(profile), **self._options())
-        )
+        """A Defender XDR incidents client for ``profile``, closed when the command ends."""
+        return self._client(IncidentsClient, profile)
+
+    def detections(self, profile: Profile) -> DetectionsClient:
+        """A Defender XDR custom detection rules client for ``profile``, closed when the
+        command ends."""
+        return self._client(DetectionsClient, profile)
 
     def xdr(self, profile: Profile) -> XdrClient:
-        return self.runtime.track(
-            XdrClient.for_profile(profile, self.tokens(profile), **self._options())
-        )
+        """A Defender for Endpoint client for ``profile``, closed when the command ends."""
+        return self._client(XdrClient, profile)
 
     def intune(self, profile: Profile) -> IntuneClient:
-        return self.runtime.track(
-            IntuneClient.for_profile(profile, self.tokens(profile), **self._options())
-        )
+        """An Intune client for ``profile``, closed when the command ends."""
+        return self._client(IntuneClient, profile)
 
     def azure(self, profile: Profile) -> AzureClient:
-        return self.runtime.track(
-            AzureClient.for_profile(profile, self.tokens(profile), **self._options())
-        )
+        """An Azure Resource Manager client for ``profile``, closed when the command ends."""
+        return self._client(AzureClient, profile)
 
     def keyvault(self, profile: Profile, vault: str) -> KeyVaultClient:
+        """A client for the Key Vault ``vault``, in ``profile``'s cloud, closed when the command
+        ends."""
         return self.runtime.track(
             KeyVaultClient.for_profile(profile, self.tokens(profile), vault, **self._options())
         )
 
     def logs(self, profile: Profile) -> LogAnalyticsClient:
-        return self.runtime.track(
-            LogAnalyticsClient.for_profile(profile, self.tokens(profile), **self._options())
-        )
+        """A Log Analytics client for ``profile``, closed when the command ends."""
+        return self._client(LogAnalyticsClient, profile)
 
     def azure_pim(self, profile: Profile) -> AzurePimClient:
-        return self.runtime.track(
-            AzurePimClient.for_profile(profile, self.tokens(profile), **self._options())
-        )
+        """A PIM client for Azure resources in ``profile``, closed when the command ends."""
+        return self._client(AzurePimClient, profile)
 
     def graph_pim(self, profile: Profile) -> GraphPimClient:
-        return self.runtime.track(
-            GraphPimClient.for_profile(profile, self.tokens(profile), **self._options())
-        )
+        """A PIM client for Entra roles and groups in ``profile``, closed when the command ends."""
+        return self._client(GraphPimClient, profile)
 
     def subscription_ids(self, profile: Profile, chosen: list[str] | None = None) -> list[str]:
         """The subscriptions an Azure command covers: ``chosen``, the profile's pinned one,

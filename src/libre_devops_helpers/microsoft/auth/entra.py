@@ -20,6 +20,7 @@ from typing import Any
 
 import requests
 
+from libre_devops_helpers.core import fields
 from libre_devops_helpers.core.auth import AccessToken, utc_now
 from libre_devops_helpers.core.errors import ApiError, AuthError
 from libre_devops_helpers.core.http import ApiClient
@@ -74,8 +75,8 @@ def parse_token_response(
     token = data.get("access_token")
     if not isinstance(token, str) or not token:
         raise AuthError(f"{name}: the token response has no access_token")
-    expires_in = _number(data.get("expires_in"))
-    expires_on = _number(data.get("expires_on"))
+    expires_in = fields.number(data.get("expires_in"))
+    expires_on = fields.number(data.get("expires_on"))
     if expires_in is not None:
         expiry = now + timedelta(seconds=expires_in)
     elif expires_on is not None:
@@ -116,6 +117,7 @@ class ClientSecretCredential:
         return f"ClientSecretCredential(client_id={self.client_id!r})"
 
     def get_token(self, resource: str, tenant_id: str) -> AccessToken:
+        """A token for ``resource``, from the client id and secret."""
         return self._endpoint.token(
             resource, tenant_id, {"client_id": self.client_id, "client_secret": self._secret}
         )
@@ -154,6 +156,7 @@ class WorkloadIdentityCredential:
         return f"WorkloadIdentityCredential(client_id={self.client_id!r})"
 
     def get_token(self, resource: str, tenant_id: str) -> AccessToken:
+        """A token for ``resource``, exchanged for a fresh federated token (a client assertion)."""
         return self._endpoint.token(
             resource,
             tenant_id,
@@ -216,16 +219,6 @@ def github_actions_assertion(
         return value
 
     return fetch
-
-
-def _number(value: object) -> float | None:
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, int | float):
-        return float(value)
-    if isinstance(value, str) and value.strip().isdigit():
-        return float(value.strip())
-    return None
 
 
 def _hint(exc: ApiError) -> str | None:

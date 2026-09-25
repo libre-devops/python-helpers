@@ -11,13 +11,12 @@ import itertools
 import re
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
-from typing import Self
 
 import requests
 
 from libre_devops_helpers.core.auth import TokenProvider, token_source
-from libre_devops_helpers.core.errors import ApiError, LdoError, NotFoundError
-from libre_devops_helpers.core.http import ApiClient
+from libre_devops_helpers.core.errors import ApiError, InputError, NotFoundError
+from libre_devops_helpers.core.http import ApiClient, ServiceClient
 from libre_devops_helpers.core.tables import QueryResult
 from libre_devops_helpers.core.util import (
     candidate_names,
@@ -34,7 +33,7 @@ from libre_devops_helpers.microsoft.xdr.models import (
     Vulnerability,
 )
 
-_MACHINE_ID = re.compile(r"^[0-9a-fA-F]{40}$")
+_MACHINE_ID = re.compile(r"[0-9a-fA-F]{40}")
 _NEVER = datetime.min.replace(tzinfo=UTC)
 _SEVERITY_ORDER = {"informational": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
 
@@ -42,11 +41,8 @@ _SEVERITY_ORDER = {"informational": 0, "low": 1, "medium": 2, "high": 3, "critic
 MDE_RESOURCE = PUBLIC.mde_url or "https://api.securitycenter.microsoft.com"
 
 
-class XdrClient:
+class XdrClient(ServiceClient):
     """Defender for Endpoint lookups. Close it (or use ``with``) when done."""
-
-    def __init__(self, api: ApiClient) -> None:
-        self.api = api
 
     @classmethod
     def create(
@@ -92,15 +88,6 @@ class XdrClient:
             verify=verify,
             session=session,
         )
-
-    def close(self) -> None:
-        self.api.close()
-
-    def __enter__(self) -> Self:
-        return self
-
-    def __exit__(self, *exc_info: object) -> None:
-        self.close()
 
     # Machines ---------------------------------------------------------------------
 
@@ -227,7 +214,7 @@ class XdrClient:
     def hunt(self, query: str) -> QueryResult:
         """Run an Advanced Hunting (KQL) query. The API caps results at 100,000 rows."""
         if not query.strip():
-            raise LdoError("the hunting query is empty")
+            raise InputError("the hunting query is empty")
         data = self.api.post("/api/advancedqueries/run", {"Query": query})
         schema = data.get("Schema")
         results = data.get("Results")
@@ -252,7 +239,7 @@ def parse_severity(severity: str) -> int:
     """The rank of a severity someone typed. Raises for anything unknown."""
     rank = _SEVERITY_ORDER.get(severity.strip().casefold())
     if rank is None:
-        raise LdoError(
+        raise InputError(
             f"unknown severity {severity!r}", hint=f"use one of {', '.join(_SEVERITY_ORDER)}"
         )
     return rank
@@ -265,6 +252,6 @@ def _severity_rank(severity: str | None) -> int:
 
 def _machine_id(value: str) -> str:
     machine_id = value.strip()
-    if not _MACHINE_ID.match(machine_id):
-        raise LdoError(f"not an MDE machine id: {machine_id!r}")
+    if not _MACHINE_ID.fullmatch(machine_id):
+        raise InputError(f"not an MDE machine id: {machine_id!r}")
     return machine_id

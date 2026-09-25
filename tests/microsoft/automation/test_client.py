@@ -88,8 +88,9 @@ def test_streams_come_oldest_first_and_one_can_be_read_in_full():
     ]
     full = automation.stream(aa, "job-3", "s2")
     assert full.message.startswith("Forbidden: the caller has no get permission")
-    with pytest.raises(InputError):
-        automation.stream(aa, "job-3", "s2/../x")
+    for bad in ("s2/../x", "s2\n"):  # a trailing line break is not let through either
+        with pytest.raises(InputError):
+            automation.stream(aa, "job-3", bad)
 
 
 def test_output_is_the_jobs_text():

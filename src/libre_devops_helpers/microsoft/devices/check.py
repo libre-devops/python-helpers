@@ -18,7 +18,7 @@ from datetime import datetime
 from typing import TypeVar
 
 from libre_devops_helpers.core.auth import utc_now
-from libre_devops_helpers.core.errors import ApiError, LdoError, ReauthRequired
+from libre_devops_helpers.core.errors import ApiError, ReauthRequired
 from libre_devops_helpers.core.poll import PollLimits, PollOutcome, poll
 from libre_devops_helpers.microsoft.devices.models import (
     CheckRun,
@@ -31,11 +31,14 @@ from libre_devops_helpers.microsoft.entra.models import EntraDevice
 from libre_devops_helpers.microsoft.intune.client import IntuneClient
 from libre_devops_helpers.microsoft.intune.models import ManagedDevice
 from libre_devops_helpers.microsoft.xdr.client import XdrClient
-from libre_devops_helpers.microsoft.xdr.models import MachineLookup
+from libre_devops_helpers.microsoft.xdr.models import Machine, MachineLookup
 
 _FATAL = frozenset({401, 403})
 
 T = TypeVar("T")
+R = TypeVar("R")
+# A judge looks at the record a lookup found and says whether a check is met, and why.
+Judge = Callable[[R], tuple[bool, str]]
 
 
 class DeviceChecker:
@@ -51,7 +54,7 @@ class DeviceChecker:
         clock: Callable[[], datetime] = utc_now,
     ) -> None:
         if workers < 1:
-            raise LdoError("workers must be at least 1")
+            raise ValueError("workers must be at least 1")
         self._entra = entra
         self._xdr = xdr
         self._intune = intune
@@ -109,7 +112,7 @@ class DeviceChecker:
             if needed and client is None
         ]
         if missing:
-            raise LdoError(f"these checks need a client for {', '.join(missing)}")
+            raise ValueError(f"these checks need a client for {', '.join(missing)}")
 
     def _group_members(self, groups: Sequence[str]) -> dict[str, frozenset[str]]:
         if not groups or self._entra is None:
@@ -124,6 +127,7 @@ class DeviceChecker:
     def _check_one(
         self, name: str, expectations: Expectations, members: Mapping[str, frozenset[str]]
     ) -> DeviceReport:
+        """Look ``name`` up in each service the checks need, then judge every check."""
         errors: dict[str, str] = {}
         entra_devices: tuple[EntraDevice, ...] = ()
         lookup: MachineLookup | None = None
@@ -138,78 +142,16 @@ class DeviceChecker:
             intune = self._intune
             managed = _guarded(errors, "intune", lambda: tuple(intune.find_devices(name)), ())
 
+        machine = lookup.machine if lookup is not None else None
+        newest = managed[0] if managed else None
         outcomes: list[Outcome] = []
         if expectations.in_entra:
             outcomes.append(_entra_outcome(entra_devices, errors.get("entra")))
-        machine = lookup.machine if lookup is not None else None
-        defender_error = errors.get("defender")
-        if expectations.onboarded:
-            if defender_error:
-                outcomes.append(Outcome("defender", "error", defender_error))
-            elif machine is None:
-                outcomes.append(Outcome("defender", "unmet", "no Defender record"))
-            elif machine.onboarding_status == "Onboarded":
-                outcomes.append(Outcome("defender", "met", f"onboarded, {machine.health_status}"))
-            else:
-                outcomes.append(
-                    Outcome("defender", "unmet", machine.onboarding_status or "not onboarded")
-                )
-        if expectations.active:
-            if defender_error:
-                outcomes.append(Outcome("active", "error", defender_error))
-            elif machine is None:
-                outcomes.append(Outcome("active", "unmet", "no Defender record"))
-            elif machine.health_status == "Active":
-                outcomes.append(Outcome("active", "met", "Active"))
-            else:
-                outcomes.append(Outcome("active", "unmet", machine.health_status or "unknown"))
-        for tag in expectations.tags:
-            check = f"tag {tag}"
-            if defender_error:
-                outcomes.append(Outcome(check, "error", defender_error))
-            elif machine is None:
-                outcomes.append(Outcome(check, "unmet", "no Defender record"))
-            elif tag.casefold() in {item.casefold() for item in machine.machine_tags}:
-                outcomes.append(Outcome(check, "met", "tagged"))
-            else:
-                outcomes.append(Outcome(check, "unmet", "tag missing"))
-        for device_group in expectations.device_groups:
-            check = f"device group {device_group}"
-            if defender_error:
-                outcomes.append(Outcome(check, "error", defender_error))
-            elif machine is None:
-                outcomes.append(Outcome(check, "unmet", "no Defender record"))
-            elif machine.device_group.casefold() == device_group.casefold():
-                outcomes.append(Outcome(check, "met", "in the device group"))
-            else:
-                outcomes.append(Outcome(check, "unmet", f"in {machine.device_group or 'none'}"))
-        for group in expectations.groups:
-            check = f"group {group}"
-            if errors.get("entra"):
-                outcomes.append(Outcome(check, "error", errors["entra"]))
-            elif not entra_devices:
-                outcomes.append(Outcome(check, "unmet", "not in Entra"))
-            elif any(device.id in members.get(group, frozenset()) for device in entra_devices):
-                outcomes.append(Outcome(check, "met", "member"))
-            else:
-                outcomes.append(Outcome(check, "unmet", "not a member"))
-        newest = managed[0] if managed else None
-        if expectations.in_intune:
-            if errors.get("intune"):
-                outcomes.append(Outcome("intune", "error", errors["intune"]))
-            elif newest is None:
-                outcomes.append(Outcome("intune", "unmet", "not enrolled in Intune"))
-            else:
-                outcomes.append(Outcome("intune", "met", newest.management_agent or "enrolled"))
-        if expectations.compliant:
-            if errors.get("intune"):
-                outcomes.append(Outcome("compliant", "error", errors["intune"]))
-            elif newest is None:
-                outcomes.append(Outcome("compliant", "unmet", "not enrolled in Intune"))
-            elif newest.compliant:
-                outcomes.append(Outcome("compliant", "met", "compliant"))
-            else:
-                outcomes.append(Outcome("compliant", "unmet", newest.compliance_state or "unknown"))
+        outcomes += _defender_outcomes(expectations, machine, errors.get("defender"))
+        outcomes += _group_outcomes(
+            expectations.groups, entra_devices, members, errors.get("entra")
+        )
+        outcomes += _intune_outcomes(expectations, newest, errors.get("intune"))
         return DeviceReport(name, tuple(outcomes), entra_devices, lookup, managed)
 
 
@@ -284,3 +226,112 @@ def _entra_outcome(devices: tuple[EntraDevice, ...], error: str | None) -> Outco
         return Outcome("entra", "unmet", "disabled in Entra")
     detail = "present" if len(devices) == 1 else f"{len(devices)} objects share the name"
     return Outcome("entra", "met", detail)
+
+
+# Judging the checks ----------------------------------------------------------------------
+#
+# Every check has the same shape: the lookup failed (error), it found nothing (unmet, and
+# why), or it found a record, which a judge meets or not with a detail. ``_judge`` holds
+# that shape once; each service lists its checks as (name, judge) pairs.
+
+
+def _judge(
+    check: str, error: str | None, found: R | None, missing: str, judge: Judge[R]
+) -> Outcome:
+    if error:
+        return Outcome(check, "error", error)
+    if found is None:
+        return Outcome(check, "unmet", missing)
+    met, detail = judge(found)
+    return Outcome(check, "met" if met else "unmet", detail)
+
+
+def _defender_outcomes(
+    expectations: Expectations, machine: Machine | None, error: str | None
+) -> list[Outcome]:
+    """Onboarded, active, each tag and each device group, from the Defender record."""
+    checks: list[tuple[str, Judge[Machine]]] = []
+    if expectations.onboarded:
+        checks.append(("defender", _onboarded))
+    if expectations.active:
+        checks.append(("active", _active))
+    checks += [(f"tag {tag}", _has_tag(tag)) for tag in expectations.tags]
+    checks += [
+        (f"device group {group}", _in_device_group(group)) for group in expectations.device_groups
+    ]
+    return [_judge(check, error, machine, "no Defender record", judge) for check, judge in checks]
+
+
+def _onboarded(machine: Machine) -> tuple[bool, str]:
+    if machine.onboarding_status == "Onboarded":
+        return True, f"onboarded, {machine.health_status}"
+    return False, machine.onboarding_status or "not onboarded"
+
+
+def _active(machine: Machine) -> tuple[bool, str]:
+    if machine.health_status == "Active":
+        return True, "Active"
+    return False, machine.health_status or "unknown"
+
+
+def _has_tag(tag: str) -> Judge[Machine]:
+    def judge(machine: Machine) -> tuple[bool, str]:
+        tagged = tag.casefold() in {item.casefold() for item in machine.machine_tags}
+        return tagged, "tagged" if tagged else "tag missing"
+
+    return judge
+
+
+def _in_device_group(group: str) -> Judge[Machine]:
+    def judge(machine: Machine) -> tuple[bool, str]:
+        if machine.device_group.casefold() == group.casefold():
+            return True, "in the device group"
+        return False, f"in {machine.device_group or 'none'}"
+
+    return judge
+
+
+def _group_outcomes(
+    groups: Sequence[str],
+    devices: tuple[EntraDevice, ...],
+    members: Mapping[str, frozenset[str]],
+    error: str | None,
+) -> list[Outcome]:
+    """Membership of each Entra group, by any of the Entra objects that share the name."""
+
+    def member_of(group: str) -> Judge[tuple[EntraDevice, ...]]:
+        def judge(found: tuple[EntraDevice, ...]) -> tuple[bool, str]:
+            ids = members.get(group, frozenset())
+            joined = any(device.id in ids for device in found)
+            return joined, "member" if joined else "not a member"
+
+        return judge
+
+    return [
+        _judge(f"group {group}", error, devices or None, "not in Entra", member_of(group))
+        for group in groups
+    ]
+
+
+def _intune_outcomes(
+    expectations: Expectations, newest: ManagedDevice | None, error: str | None
+) -> list[Outcome]:
+    """Enrolled and compliant, from the newest Intune record."""
+    checks: list[tuple[str, Judge[ManagedDevice]]] = []
+    if expectations.in_intune:
+        checks.append(("intune", _enrolled))
+    if expectations.compliant:
+        checks.append(("compliant", _compliant))
+    return [
+        _judge(check, error, newest, "not enrolled in Intune", judge) for check, judge in checks
+    ]
+
+
+def _enrolled(device: ManagedDevice) -> tuple[bool, str]:
+    return True, device.management_agent or "enrolled"
+
+
+def _compliant(device: ManagedDevice) -> tuple[bool, str]:
+    if device.compliant:
+        return True, "compliant"
+    return False, device.compliance_state or "unknown"

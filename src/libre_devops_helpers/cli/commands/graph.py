@@ -7,6 +7,7 @@ Everything reads; there is no POST, PATCH or DELETE.
 """
 
 import json
+from collections.abc import Callable
 from datetime import datetime
 from typing import Annotated, Any
 
@@ -18,6 +19,8 @@ from libre_devops_helpers.cli.options import (
     OutputOption,
     ProfileOption,
     QueryFileOption,
+    SortOption,
+    UniqueOption,
     duration,
     get_runtime,
     read_query,
@@ -25,9 +28,10 @@ from libre_devops_helpers.cli.options import (
 from libre_devops_helpers.cli.render import Output
 from libre_devops_helpers.core.errors import AmbiguousError, ApiError
 from libre_devops_helpers.core.tables import QueryResult
+from libre_devops_helpers.microsoft.config import Profile
 from libre_devops_helpers.microsoft.graph import not_found
 from libre_devops_helpers.microsoft.resources import resolve_resource
-from libre_devops_helpers.microsoft.tokens import decode_token
+from libre_devops_helpers.microsoft.tokens import DecodedToken, decode_token
 
 graph_app = typer.Typer(
     rich_markup_mode="markdown",
@@ -51,6 +55,7 @@ _FIRST = (
 
 
 def register(app: typer.Typer) -> None:
+    """Add the ``graph`` commands to ``app``."""
     app.add_typer(graph_app)
 
 
@@ -78,10 +83,32 @@ def whoami(
     except ApiError as exc:
         render.warn(f"could not read the {'user' if kind == 'user' else 'app'}: {exc}")
     permissions = decoded.scopes if kind == "user" else decoded.roles
-    record = {
+    if output is Output.TABLE:
+        render.echo(render.pairs(_whoami_pairs(selected, decoded, detail)))
+        return
+    row = [
+        selected.name,
+        kind,
+        decoded.principal,
+        decoded.tenant_id,
+        render.when(decoded.expires_at),
+        " ".join(permissions),
+    ]
+    render.emit(
+        output,
+        ["PROFILE", "KIND", "PRINCIPAL", "TENANT", "EXPIRES", "PERMISSIONS"],
+        [row],
+        _whoami_record(selected, decoded, detail),
+    )
+
+
+def _whoami_record(
+    selected: Profile, decoded: DecodedToken, detail: dict[str, Any] | None
+) -> dict[str, Any]:
+    return {
         "profile": selected.name,
         "tenant_id": decoded.tenant_id,
-        "kind": kind,
+        "kind": decoded.identity_type,
         "principal": decoded.principal,
         "client_app_id": decoded.app_id,
         "client_app": decoded.claims.get("app_displayname"),
@@ -90,43 +117,31 @@ def whoami(
         "roles": list(decoded.roles),
         "object": detail,
     }
-    if output is not Output.TABLE:
-        render.emit(
-            output,
-            ["PROFILE", "KIND", "PRINCIPAL", "TENANT", "EXPIRES", "PERMISSIONS"],
-            [
-                [
-                    selected.name,
-                    kind,
-                    decoded.principal,
-                    decoded.tenant_id,
-                    render.when(decoded.expires_at),
-                    " ".join(permissions),
-                ]
-            ],
-            record,
-        )
-        return
+
+
+def _whoami_pairs(
+    selected: Profile, decoded: DecodedToken, detail: dict[str, Any] | None
+) -> list[tuple[str, str]]:
+    """Who, then the user or app Graph knows them as, then the token's own facts."""
+    user = decoded.identity_type == "user"
     rows = [
         ("Profile", f"{selected.name} ({selected.auth})"),
         ("Signed in as", decoded.principal or "-"),
-        ("Kind", "user (delegated)" if kind == "user" else f"{kind} (application)"),
+        ("Kind", "user (delegated)" if user else f"{decoded.identity_type} (application)"),
     ]
     if detail:
         rows.append(("Name", str(detail.get("displayName") or "-")))
         rows.append(("Object id", str(detail.get("id") or "-")))
         if detail.get("jobTitle"):
             rows.append(("Job title", str(detail["jobTitle"])))
-    rows += [
+    permissions = decoded.scopes if user else decoded.roles
+    return [
+        *rows,
         ("Tenant", decoded.tenant_id),
         ("Client app", f"{decoded.claims.get('app_displayname') or '-'} ({decoded.app_id})"),
         ("Expires", render.when(decoded.expires_at)),
-        (
-            "Scopes" if kind == "user" else "Roles",
-            ", ".join(sorted(permissions)) or "(none)",
-        ),
+        ("Scopes" if user else "Roles", ", ".join(sorted(permissions)) or "(none)"),
     ]
-    render.echo(render.pairs(rows))
 
 
 @graph_app.command("token")
@@ -189,6 +204,8 @@ def get(
     ] = None,
     beta: BetaOption = False,
     profile: ProfileOption = None,
+    sort: SortOption = None,
+    unique: UniqueOption = None,
     output: OutputOption = Output.TABLE,
 ) -> None:
     """GET anything from Graph, paged. Collections come back as rows, objects as fields.
@@ -228,12 +245,16 @@ def get(
     render.note(note)
 
 
-def _lookup_command(kind: str, what: str):
+def _lookup_command(kind: str, what: str) -> Callable[..., None]:
+    """A command that looks one ``kind`` of object up by name or id (``get-user``, ...)."""
+
     def command(
         ctx: typer.Context,
         ref: Annotated[str, typer.Argument(metavar="NAME_OR_ID", help=f"The {what}'s name or id.")],
         select: SelectOption = None,
         profile: ProfileOption = None,
+        sort: SortOption = None,
+        unique: UniqueOption = None,
         output: OutputOption = Output.TABLE,
     ) -> None:
         runtime = get_runtime(ctx).microsoft
@@ -279,6 +300,8 @@ def hunt(
         typer.Option("--timespan", help="How far back the data goes, e.g. 7d. Default: 30 days."),
     ] = None,
     profile: ProfileOption = None,
+    sort: SortOption = None,
+    unique: UniqueOption = None,
     output: OutputOption = Output.TABLE,
 ) -> None:
     """Advanced Hunting (KQL) over the whole Defender XDR schema, through Graph.

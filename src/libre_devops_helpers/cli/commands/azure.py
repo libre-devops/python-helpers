@@ -9,6 +9,8 @@ from libre_devops_helpers.cli.options import (
     OutputOption,
     ProfileOption,
     QueryFileOption,
+    SortOption,
+    UniqueOption,
     get_runtime,
     read_query,
 )
@@ -34,12 +36,17 @@ SubscriptionOption = Annotated[
 
 
 def register(app: typer.Typer) -> None:
+    """Add the ``azure`` commands to ``app``."""
     app.add_typer(azure_app, name="azure")
 
 
 @azure_app.command("subscriptions")
 def subscriptions(
-    ctx: typer.Context, profile: ProfileOption = None, output: OutputOption = Output.TABLE
+    ctx: typer.Context,
+    profile: ProfileOption = None,
+    sort: SortOption = None,
+    unique: UniqueOption = None,
+    output: OutputOption = Output.TABLE,
 ) -> None:
     """List the subscriptions the profile's credential can see in its tenant."""
     runtime = get_runtime(ctx).microsoft
@@ -66,6 +73,8 @@ def resource_graph(
     limit: Annotated[int, typer.Option("--limit", min=1, help="Most rows to fetch.")] = 1000,
     subscription: SubscriptionOption = None,
     profile: ProfileOption = None,
+    sort: SortOption = None,
+    unique: UniqueOption = None,
     output: OutputOption = Output.TABLE,
 ) -> None:
     """Run an Azure Resource Graph (KQL) query across subscriptions."""
@@ -87,6 +96,8 @@ def rbac(
     ],
     subscription: SubscriptionOption = None,
     profile: ProfileOption = None,
+    sort: SortOption = None,
+    unique: UniqueOption = None,
     output: OutputOption = Output.TABLE,
 ) -> None:
     """List every Azure role assignment that applies to a principal, across subscriptions.
@@ -191,6 +202,8 @@ def recommendations(
     ] = None,
     subscription: SubscriptionOption = None,
     profile: ProfileOption = None,
+    sort: SortOption = None,
+    unique: UniqueOption = None,
     output: OutputOption = Output.TABLE,
 ) -> None:
     """List Defender for Cloud recommendations that resources fail, most severe first."""
@@ -228,6 +241,8 @@ def defender_plans(
     ctx: typer.Context,
     subscription: SubscriptionOption = None,
     profile: ProfileOption = None,
+    sort: SortOption = None,
+    unique: UniqueOption = None,
     output: OutputOption = Output.TABLE,
 ) -> None:
     """List every Defender for Cloud plan on each subscription and whether it is on."""

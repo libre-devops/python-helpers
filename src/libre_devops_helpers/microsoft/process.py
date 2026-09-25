@@ -46,9 +46,11 @@ class AzureCliRunner(CommandRunner):
         return super().run_json(*args, "--output", "json", "--only-show-errors")
 
     def clean_stderr(self, stderr: str | None) -> str:
+        """The Azure CLI's stderr without its warnings and colour: the error itself."""
         return clean_stderr(stderr)
 
     def hint_for(self, detail: str) -> str | None:
+        """What to do about an Azure CLI error, when it is one of the known ones."""
         return hint_for(detail)
 
 

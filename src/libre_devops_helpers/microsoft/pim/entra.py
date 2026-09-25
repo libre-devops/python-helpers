@@ -11,16 +11,13 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import replace
-from typing import Any, Self
+from typing import Any
 
-import requests
-
-from libre_devops_helpers.core.auth import TokenProvider, token_source
-from libre_devops_helpers.core.errors import ApiError, LdoError, NotFoundError
+from libre_devops_helpers.core import fields
+from libre_devops_helpers.core.errors import ApiError, NotFoundError
 from libre_devops_helpers.core.http import ApiClient
-from libre_devops_helpers.core.util import is_guid, odata_string, parse_datetime
-from libre_devops_helpers.microsoft.clouds import PUBLIC
-from libre_devops_helpers.microsoft.config import Profile
+from libre_devops_helpers.core.util import is_guid, odata_string, require_guid
+from libre_devops_helpers.microsoft.api_clients import GraphServiceClient
 from libre_devops_helpers.microsoft.pim.models import (
     Area,
     PimAssignment,
@@ -33,72 +30,33 @@ _ROLES = "/v1.0/roleManagement/directory"
 _GROUPS = "/v1.0/identityGovernance/privilegedAccess/group"
 
 
-class GraphPimClient:
+class GraphPimClient(GraphServiceClient):
     """PIM for Entra roles and PIM for Groups. Close it (or use ``with``) when done."""
 
+    API_NAME = "Graph PIM"
+
     def __init__(self, api: ApiClient) -> None:
-        self.api = api
+        super().__init__(api)
         self._role_names: dict[str, str] | None = None
         self._group_names: dict[str, str] = {}
-
-    @classmethod
-    def create(
-        cls,
-        tokens: TokenProvider,
-        tenant_id: str,
-        *,
-        graph_url: str = PUBLIC.graph_url,
-        verify: bool | str = True,
-        session: requests.Session | None = None,
-    ) -> GraphPimClient:
-        api = ApiClient(
-            graph_url,
-            token_source(tokens, graph_url, tenant_id),
-            name="Graph PIM",
-            verify=verify,
-            session=session,
-        )
-        return cls(api)
-
-    @classmethod
-    def for_profile(
-        cls,
-        profile: Profile,
-        tokens: TokenProvider,
-        *,
-        verify: bool | str = True,
-        session: requests.Session | None = None,
-    ) -> GraphPimClient:
-        return cls.create(
-            tokens,
-            profile.tenant_id,
-            graph_url=profile.cloud.graph_url,
-            verify=verify,
-            session=session,
-        )
-
-    def close(self) -> None:
-        self.api.close()
-
-    def __enter__(self) -> Self:
-        return self
-
-    def __exit__(self, *exc_info: object) -> None:
-        self.close()
 
     # Entra roles --------------------------------------------------------------------
 
     def role_eligible(self, *, principal_id: str | None = None) -> list[PimAssignment]:
+        """Entra roles the signed-in user (or ``principal_id``) may activate."""
         items = self._mine_or_theirs(f"{_ROLES}/roleEligibilityScheduleInstances", principal_id)
         return self._role_assignments(items, "eligible")
 
     def role_active(self, *, principal_id: str | None = None) -> list[PimAssignment]:
+        """Entra roles the signed-in user (or ``principal_id``) holds now, assigned or activated."""
         items = self._mine_or_theirs(f"{_ROLES}/roleAssignmentScheduleInstances", principal_id)
         return self._role_assignments(items, "active")
 
     def role_requests(
         self, *, approver: bool = False, principal_id: str | None = None
     ) -> list[PimRequest]:
+        """Role requests the signed-in user (or ``principal_id``) made, or with ``approver`` those
+        waiting on them; the newest first."""
         path = f"{_ROLES}/roleAssignmentScheduleRequests"
         items = self._mine_or_theirs(path, principal_id, on="approver" if approver else "principal")
         names = self.role_names()
@@ -127,7 +85,7 @@ class GraphPimClient:
         """Every directory role definition's name by id, fetched once."""
         if self._role_names is None:
             self._role_names = {
-                str(item.get("id")): str(item.get("displayName") or "")
+                fields.text(item, "id"): fields.text(item, "displayName")
                 for item in self.api.get_all(
                     f"{_ROLES}/roleDefinitions", params={"$select": "id,displayName"}
                 )
@@ -137,16 +95,21 @@ class GraphPimClient:
     # PIM for Groups -----------------------------------------------------------------
 
     def group_eligible(self, *, principal_id: str | None = None) -> list[PimAssignment]:
+        """Group memberships and ownerships the signed-in user (or ``principal_id``) could
+        activate."""
         items = self._mine_or_theirs(f"{_GROUPS}/eligibilityScheduleInstances", principal_id)
         return self._group_assignments(items, "eligible")
 
     def group_active(self, *, principal_id: str | None = None) -> list[PimAssignment]:
+        """Group memberships and ownerships the signed-in user (or ``principal_id``) holds now."""
         items = self._mine_or_theirs(f"{_GROUPS}/assignmentScheduleInstances", principal_id)
         return self._group_assignments(items, "active")
 
     def group_requests(
         self, *, approver: bool = False, principal_id: str | None = None
     ) -> list[PimRequest]:
+        """Group requests the signed-in user (or ``principal_id``) made, or with ``approver`` those
+        waiting on them; the newest first."""
         path = f"{_GROUPS}/assignmentScheduleRequests"
         items = self._mine_or_theirs(path, principal_id, on="approver" if approver else "principal")
         return _newest([self._group_request(item) for item in items])
@@ -209,15 +172,15 @@ class GraphPimClient:
                 area="entra",
                 state="eligible" if state == "eligible" else "active",
                 role=names.get(
-                    str(item.get("roleDefinitionId")), str(item.get("roleDefinitionId") or "")
+                    fields.text(item, "roleDefinitionId"), fields.text(item, "roleDefinitionId")
                 ),
                 scope=str(item.get("directoryScopeId") or "/"),
-                principal_id=str(item.get("principalId") or ""),
+                principal_id=fields.text(item, "principalId"),
                 principal_name="",
-                member_type=str(item.get("memberType") or ""),
-                assignment_type=str(item.get("assignmentType") or ""),
-                starts=parse_datetime(item.get("startDateTime")),
-                ends=parse_datetime(item.get("endDateTime")),
+                member_type=fields.text(item, "memberType"),
+                assignment_type=fields.text(item, "assignmentType"),
+                starts=fields.when(item, "startDateTime"),
+                ends=fields.when(item, "endDateTime"),
                 raw=dict(item),
             )
             for item in items
@@ -229,14 +192,14 @@ class GraphPimClient:
             PimAssignment(
                 area="groups",
                 state="eligible" if state == "eligible" else "active",
-                role=str(item.get("accessId") or ""),
-                scope=self.group_name(str(item.get("groupId") or "")),
-                principal_id=str(item.get("principalId") or ""),
+                role=fields.text(item, "accessId"),
+                scope=self.group_name(fields.text(item, "groupId")),
+                principal_id=fields.text(item, "principalId"),
                 principal_name="",
-                member_type=str(item.get("memberType") or ""),
-                assignment_type=str(item.get("assignmentType") or ""),
-                starts=parse_datetime(item.get("startDateTime")),
-                ends=parse_datetime(item.get("endDateTime")),
+                member_type=fields.text(item, "memberType"),
+                assignment_type=fields.text(item, "assignmentType"),
+                starts=fields.when(item, "startDateTime"),
+                ends=fields.when(item, "endDateTime"),
                 raw=dict(item),
             )
             for item in items
@@ -246,34 +209,31 @@ class GraphPimClient:
     def _group_request(self, item: Mapping[str, Any]) -> PimRequest:
         return replace(
             _request("groups", item, {}),
-            role=str(item.get("accessId") or ""),
-            scope=self.group_name(str(item.get("groupId") or "")),
+            role=fields.text(item, "accessId"),
+            scope=self.group_name(fields.text(item, "groupId")),
         )
 
 
 def _request(area: Area, item: Mapping[str, Any], role_names: Mapping[str, str]) -> PimRequest:
-    schedule = item.get("scheduleInfo")
-    schedule = schedule if isinstance(schedule, Mapping) else {}
-    expiration = schedule.get("expiration")
-    expiration = expiration if isinstance(expiration, Mapping) else {}
-    ticket = item.get("ticketInfo")
-    ticket = ticket if isinstance(ticket, Mapping) else {}
-    role_id = str(item.get("roleDefinitionId") or "")
+    schedule = fields.mapping(item.get("scheduleInfo"))
+    expiration = fields.mapping(schedule.get("expiration"))
+    ticket = fields.mapping(item.get("ticketInfo"))
+    role_id = fields.text(item, "roleDefinitionId")
     return PimRequest(
         area=area,
-        id=str(item.get("id") or ""),
-        action=str(item.get("action") or ""),
-        status=str(item.get("status") or ""),
+        id=fields.text(item, "id"),
+        action=fields.text(item, "action"),
+        status=fields.text(item, "status"),
         role=role_names.get(role_id, role_id),
         scope=str(item.get("directoryScopeId") or "/"),
-        principal_id=str(item.get("principalId") or ""),
+        principal_id=fields.text(item, "principalId"),
         principal_name="",
-        justification=str(item.get("justification") or ""),
-        created=parse_datetime(item.get("createdDateTime")),
-        starts=parse_datetime(schedule.get("startDateTime")),
-        ends=parse_datetime(expiration.get("endDateTime")),
-        duration=str(expiration.get("duration") or ""),
-        ticket=str(ticket.get("ticketNumber") or ""),
+        justification=fields.text(item, "justification"),
+        created=fields.when(item, "createdDateTime"),
+        starts=fields.when(schedule, "startDateTime"),
+        ends=fields.when(expiration, "endDateTime"),
+        duration=fields.text(expiration, "duration"),
+        ticket=fields.text(ticket, "ticketNumber"),
         raw=dict(item),
     )
 
@@ -289,6 +249,4 @@ def _newest(requests_: list[PimRequest]) -> list[PimRequest]:
 
 
 def _guid(value: str) -> str:
-    if not is_guid(value):
-        raise LdoError(f"not an object id: {value!r}")
-    return value.strip().lower()
+    return require_guid(value, "an object id")

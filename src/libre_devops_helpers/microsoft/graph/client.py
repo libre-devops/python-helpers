@@ -12,19 +12,14 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Any, Self
+from typing import Any
 from urllib.parse import quote, urlsplit
 
-import requests
-
-from libre_devops_helpers.core import brand
-from libre_devops_helpers.core.auth import TokenProvider, token_source
+from libre_devops_helpers.core import brand, fields
 from libre_devops_helpers.core.errors import ApiError, InputError, NotFoundError
-from libre_devops_helpers.core.http import ApiClient
 from libre_devops_helpers.core.tables import QueryResult
 from libre_devops_helpers.core.util import candidate_names, is_guid, odata_string
-from libre_devops_helpers.microsoft.clouds import PUBLIC
-from libre_devops_helpers.microsoft.config import Profile
+from libre_devops_helpers.microsoft.api_clients import GraphServiceClient
 
 VERSIONS = ("v1.0", "beta")
 HUNT_HINT = (
@@ -54,56 +49,8 @@ class GraphPage:
     more: bool = False  # a next page exists that was not fetched
 
 
-class GraphClient:
+class GraphClient(GraphServiceClient):
     """Reads Microsoft Graph for one tenant. Close it (or use ``with``) when done."""
-
-    def __init__(self, api: ApiClient) -> None:
-        self.api = api
-
-    @classmethod
-    def create(
-        cls,
-        tokens: TokenProvider,
-        tenant_id: str,
-        *,
-        graph_url: str = PUBLIC.graph_url,
-        verify: bool | str = True,
-        session: requests.Session | None = None,
-    ) -> Self:
-        api = ApiClient(
-            graph_url,
-            token_source(tokens, graph_url, tenant_id),
-            name="Microsoft Graph",
-            verify=verify,
-            session=session,
-        )
-        return cls(api)
-
-    @classmethod
-    def for_profile(
-        cls,
-        profile: Profile,
-        tokens: TokenProvider,
-        *,
-        verify: bool | str = True,
-        session: requests.Session | None = None,
-    ) -> Self:
-        return cls.create(
-            tokens,
-            profile.tenant_id,
-            graph_url=profile.cloud.graph_url,
-            verify=verify,
-            session=session,
-        )
-
-    def close(self) -> None:
-        self.api.close()
-
-    def __enter__(self) -> Self:
-        return self
-
-    def __exit__(self, *exc_info: object) -> None:
-        self.close()
 
     # Any path ------------------------------------------------------------------------
 
@@ -236,9 +183,9 @@ class GraphClient:
                     hint=HUNT_HINT,
                 ) from None
             raise
-        schema = data.get("schema") if isinstance(data.get("schema"), list) else []
-        rows = [row for row in data.get("results") or () if isinstance(row, dict)]
-        columns = [str(column.get("name")) for column in schema if isinstance(column, dict)]
+        schema = fields.items(data.get("schema"))
+        rows = [row for row in fields.items(data.get("results")) if isinstance(row, dict)]
+        columns = [fields.text(column, "name") for column in schema if isinstance(column, dict)]
         if not columns:
             return QueryResult.from_records(rows)
         return QueryResult(tuple(columns), tuple(rows))
@@ -286,6 +233,7 @@ def iso_duration(span: timedelta) -> str:
 
 
 def not_found(kind: str, ref: str) -> NotFoundError:
+    """A NotFoundError naming what was tried; for a device, both its FQDN and short name."""
     tried = (
         " or ".join(repr(name) for name in candidate_names(ref)) if kind == "device" else repr(ref)
     )

@@ -10,26 +10,20 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable, Sequence
-from typing import Self
 from urllib.parse import quote
 
-import requests
-
-from libre_devops_helpers.core.auth import TokenProvider, token_source
 from libre_devops_helpers.core.errors import AmbiguousError, ApiError, InputError, NotFoundError
-from libre_devops_helpers.core.http import ApiClient
-from libre_devops_helpers.core.util import is_guid
+from libre_devops_helpers.core.util import require_guid
+from libre_devops_helpers.microsoft.api_clients import ArmServiceClient
 from libre_devops_helpers.microsoft.automation.models import AutomationAccount, Job, JobStream
-from libre_devops_helpers.microsoft.clouds import PUBLIC
-from libre_devops_helpers.microsoft.config import Profile
 
 API_VERSION = "2023-11-01"
 PROVIDER = "Microsoft.Automation/automationAccounts"
 # What each part of a path may hold, so nothing typed can reach another resource.
-_ACCOUNT = re.compile(r"^[A-Za-z0-9-]{1,50}$")
-_GROUP = re.compile(r"^[A-Za-z0-9._()-]{1,90}$")
-_JOB = re.compile(r"^[A-Za-z0-9-]{1,64}$")
-_STREAM = re.compile(r"^[A-Za-z0-9:._-]{1,128}$")
+_ACCOUNT = re.compile(r"[A-Za-z0-9-]{1,50}")
+_GROUP = re.compile(r"[A-Za-z0-9._()-]{1,90}")
+_JOB = re.compile(r"[A-Za-z0-9-]{1,64}")
+_STREAM = re.compile(r"[A-Za-z0-9:._-]{1,128}")
 _ACCOUNT_ID = re.compile(
     r"^/subscriptions/(?P<subscription>[^/]+)/resourceGroups/(?P<group>[^/]+)"
     r"/providers/Microsoft\.Automation/automationAccounts/(?P<name>[^/]+)$",
@@ -37,52 +31,8 @@ _ACCOUNT_ID = re.compile(
 )
 
 
-class AutomationClient:
+class AutomationClient(ArmServiceClient):
     """Reads Automation accounts and their jobs through ARM. Close it when done."""
-
-    def __init__(self, api: ApiClient) -> None:
-        self.api = api
-
-    @classmethod
-    def create(
-        cls,
-        tokens: TokenProvider,
-        tenant_id: str,
-        *,
-        arm_url: str = PUBLIC.arm_url,
-        verify: bool | str = True,
-        session: requests.Session | None = None,
-    ) -> Self:
-        api = ApiClient(
-            arm_url,
-            token_source(tokens, arm_url.rstrip("/") + "/", tenant_id),
-            name="Azure Resource Manager",
-            verify=verify,
-            session=session,
-        )
-        return cls(api)
-
-    @classmethod
-    def for_profile(
-        cls,
-        profile: Profile,
-        tokens: TokenProvider,
-        *,
-        verify: bool | str = True,
-        session: requests.Session | None = None,
-    ) -> Self:
-        return cls.create(
-            tokens, profile.tenant_id, arm_url=profile.cloud.arm_url, verify=verify, session=session
-        )
-
-    def close(self) -> None:
-        self.api.close()
-
-    def __enter__(self) -> Self:
-        return self
-
-    def __exit__(self, *exc_info: object) -> None:
-        self.close()
 
     # Accounts -----------------------------------------------------------------------
 
@@ -185,7 +135,7 @@ class AutomationClient:
 
     def stream(self, account: AutomationAccount, job_id: str, stream_id: str) -> JobStream:
         """One record in full: a listing carries only its summary."""
-        if not _STREAM.match(stream_id):
+        if not _STREAM.fullmatch(stream_id):
             raise InputError(f"{stream_id!r} is not a job stream id")
         data = self.api.get(
             f"{_account_path(account)}/jobs/{_job(job_id)}/streams/{quote(stream_id, safe='')}",
@@ -218,24 +168,22 @@ def _account_path(account: AutomationAccount) -> str:
 
 
 def _guid(value: str) -> str:
-    if not is_guid(value):
-        raise InputError(f"{value!r} is not a subscription id")
-    return value
+    return require_guid(value, "a subscription id")
 
 
 def _group(value: str) -> str:
-    if not _GROUP.match(value):
+    if not _GROUP.fullmatch(value):
         raise InputError(f"{value!r} is not a resource group name")
     return value
 
 
 def _account(value: str) -> str:
-    if not _ACCOUNT.match(value):
+    if not _ACCOUNT.fullmatch(value):
         raise InputError(f"{value!r} is not an Automation account name")
     return value
 
 
 def _job(value: str) -> str:
-    if not _JOB.match(value.strip()):
+    if not _JOB.fullmatch(value.strip()):
         raise InputError(f"{value!r} is not a job id")
     return value.strip()

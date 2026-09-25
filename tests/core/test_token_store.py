@@ -46,7 +46,9 @@ def test_the_file_store_round_trips_and_records_when_it_saved(tmp_path):
     deleted = [store.delete("k"), store.delete("k"), store.delete("other")]
     assert deleted == [True, False, True]
     assert not path.exists()  # the last one out removes the file
-    assert list(path.parent.iterdir()) == []  # and no temporary file is left
+    # No temporary file is left. The lock file stays: removing it while another command
+    # waits on it would let a third lock a new one at the same time.
+    assert [item.name for item in path.parent.iterdir()] == [".refresh-tokens.json.lock"]
 
 
 @posix_only
@@ -204,3 +206,47 @@ def test_a_folder_it_cannot_write_to_is_an_auth_error(tmp_path):
             FileStore(folder / "refresh-tokens.json").save("k", "v")
     finally:
         folder.chmod(0o700)
+
+
+def test_writers_at_once_never_lose_each_others_sign_ins(tmp_path):
+    import threading
+
+    path = tmp_path / "state" / "refresh-tokens.json"
+    # Separate stores on one file stand in for separate commands: only the file lock is
+    # shared between them.
+    stores = [FileStore(path) for _ in range(4)]
+
+    def sign_in(number):
+        for index in range(15):
+            stores[number % len(stores)].save(f"{number}-{index}", "token")
+
+    threads = [threading.Thread(target=sign_in, args=(number,)) for number in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert len(json.loads(path.read_text(encoding="utf-8"))) == 8 * 15
+    assert [item.name for item in path.parent.iterdir() if item.suffix == ".tmp"] == []
+
+
+@posix_only
+def test_the_lock_file_is_private_too(tmp_path):
+    path = tmp_path / "state" / "refresh-tokens.json"
+    FileStore(path).save("k", "v")
+    assert mode(path.with_name(".refresh-tokens.json.lock")) == 0o600
+
+
+def test_a_lock_that_cannot_be_had_says_to_try_again(tmp_path, monkeypatch):
+    def busy(descriptor):
+        raise OSError("resource deadlock avoided")
+
+    monkeypatch.setattr(token_store, "_lock_file", busy)
+    with pytest.raises(AuthError, match="cannot lock the token cache") as caught:
+        FileStore(tmp_path / "refresh-tokens.json").save("k", "v")
+    assert "try again" in (caught.value.hint or "")
+
+
+def test_forgetting_what_was_never_kept_creates_nothing(tmp_path):
+    path = tmp_path / "state" / "refresh-tokens.json"
+    assert FileStore(path).delete("k") is False
+    assert not path.parent.exists()

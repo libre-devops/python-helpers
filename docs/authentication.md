@@ -83,7 +83,9 @@ in without asking. Access tokens are never kept. `token_cache` on the profile sa
 
 A refresh token is as good as your sign-in to that app until it expires or is revoked. The
 file is the trade the Azure CLI makes on Linux: fine on a machine that is yours. A cache file
-other accounts can read is refused, as ssh refuses a readable key. `keychain` on macOS and
+other accounts can read is refused, as ssh refuses a readable key. Commands running at once,
+in two terminals, say, take turns to change the file (a lock file sits beside it), so
+neither loses the other's sign-in. `keychain` on macOS and
 Linux needs the `keychain` extra:
 
 ```bash

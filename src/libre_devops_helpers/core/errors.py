@@ -29,7 +29,8 @@ class ConfigNotFoundError(ConfigError):
 
 
 class InputError(LdoError):
-    """A list of names, a file of names, or a duration could not be read."""
+    """Something given cannot be used as it is: a name, an id, a query, a duration, a
+    list or file of names. The hint says what would do."""
 
 
 class CommandError(LdoError):

@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from libre_devops_helpers.core.util import parse_datetime
+from libre_devops_helpers.core import fields
 
 # Job states that need someone to look: the runbook did not finish as it should.
 FAILED = frozenset({"Failed", "Suspended", "Stopped", "Blocked"})
@@ -35,7 +35,9 @@ class AutomationAccount:
 
     @classmethod
     def from_json(cls, data: Mapping[str, Any]) -> AutomationAccount:
-        resource_id = str(data.get("id") or "")
+        """An Automation account as ARM returns it; its subscription and resource group come from
+        its id."""
+        resource_id = fields.text(data, "id")
         parts = resource_id.split("/")
         lowered = [part.lower() for part in parts]
 
@@ -44,10 +46,10 @@ class AutomationAccount:
 
         return cls(
             id=resource_id,
-            name=str(data.get("name") or ""),
+            name=fields.text(data, "name"),
             subscription_id=after("subscriptions"),
             resource_group=after("resourcegroups"),
-            location=str(data.get("location") or ""),
+            location=fields.text(data, "location"),
             raw=dict(data),
         )
 
@@ -74,30 +76,32 @@ class Job:
 
     @classmethod
     def from_json(cls, data: Mapping[str, Any]) -> Job:
-        properties = data.get("properties")
-        props: Mapping[str, Any] = properties if isinstance(properties, Mapping) else {}
+        """A job as ARM lists it."""
+        props = fields.mapping(data.get("properties"))
         runbook = props.get("runbook")
         return cls(
             # The job's resource name is its id: the one the portal shows.
-            id=str(data.get("name") or props.get("jobId") or ""),
-            runbook=str(runbook.get("name") or "") if isinstance(runbook, Mapping) else "",
-            status=str(props.get("status") or ""),
-            created=parse_datetime(props.get("creationTime")),
-            started=parse_datetime(props.get("startTime")),
-            ended=parse_datetime(props.get("endTime")),
+            id=(fields.text(data, "name") or fields.text(props, "jobId")),
+            runbook=fields.text(runbook, "name") if isinstance(runbook, Mapping) else "",
+            status=fields.text(props, "status"),
+            created=fields.when(props, "creationTime"),
+            started=fields.when(props, "startTime"),
+            ended=fields.when(props, "endTime"),
             # Empty for Azure's own sandboxes; a Hybrid Runbook Worker group's name otherwise.
-            run_on=str(props.get("runOn") or ""),
-            started_by=str(props.get("startedBy") or ""),
-            exception=str(props.get("exception") or ""),
+            run_on=fields.text(props, "runOn"),
+            started_by=fields.text(props, "startedBy"),
+            exception=fields.text(props, "exception"),
             raw=dict(data),
         )
 
     @property
     def failed(self) -> bool:
+        """Whether the job failed, was stopped or was suspended."""
         return self.status in FAILED
 
     @property
     def finished(self) -> bool:
+        """Whether the job has ended, however it ended."""
         return self.ended is not None
 
 
@@ -114,18 +118,19 @@ class JobStream:
 
     @classmethod
     def from_json(cls, data: Mapping[str, Any]) -> JobStream:
-        properties = data.get("properties")
-        props: Mapping[str, Any] = properties if isinstance(properties, Mapping) else {}
+        """A job stream record: from a listing, only its summary; read singly, its full text."""
+        props = fields.mapping(data.get("properties"))
         return cls(
-            id=str(props.get("jobStreamId") or ""),
-            time=parse_datetime(props.get("time")),
-            stream=str(props.get("streamType") or ""),
-            summary=str(props.get("summary") or ""),
+            id=fields.text(props, "jobStreamId"),
+            time=fields.when(props, "time"),
+            stream=fields.text(props, "streamType"),
+            summary=fields.text(props, "summary"),
             # Only a single stream's GET carries the full text; a listing has the summary.
-            text=str(props.get("streamText") or ""),
+            text=fields.text(props, "streamText"),
             raw=dict(data),
         )
 
     @property
     def message(self) -> str:
+        """The record's full text when it was read singly, else its summary."""
         return self.text or self.summary

@@ -39,6 +39,8 @@ class AzureCliCredential:
         self._reauthenticate = reauthenticate
 
     def get_token(self, resource: str, tenant_id: str) -> AccessToken:
+        """A token from ``az account get-access-token``, signing the Azure CLI in again first when
+        its sign-in has lapsed and ``reauthenticate`` can."""
         try:
             data = self._fetch(resource, tenant_id)
         except AzCliError as exc:

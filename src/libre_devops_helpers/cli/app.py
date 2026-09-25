@@ -38,6 +38,7 @@ from libre_devops_helpers.cli.commands import (
 )
 from libre_devops_helpers.cli.runtime import Runtime
 from libre_devops_helpers.core import brand
+from libre_devops_helpers.core import colour as core_colour
 from libre_devops_helpers.core.errors import LdoError
 from libre_devops_helpers.core.log import LOG_FORMATS, configure_logging, normalise_format
 
@@ -91,6 +92,16 @@ def _root(
             show_default=False,
         ),
     ] = None,
+    colour: Annotated[
+        bool | None,
+        typer.Option(
+            "--colour/--no-colour",
+            "--color/--no-color",
+            help="Colour the output, or not. Default: on a terminal, unless NO_COLOR is set; "
+            "FORCE_COLOR turns it on.",
+            show_default=False,
+        ),
+    ] = None,
     version: Annotated[
         bool,
         typer.Option(
@@ -99,6 +110,11 @@ def _root(
     ] = False,
 ) -> None:
     configure_logging(verbose, log_format, log_level)
+    # One colour decision for everything written: click keeps or strips the styles by it.
+    core_colour.use(colour)
+    ctx.color = core_colour.setting()
+    render.sort_rows(None)
+    render.unique_rows(None)
     render.structured_output(normalise_format(log_format) != "text")
     # Tests pass a prepared Runtime as obj; a real run builds one here.
     if not isinstance(ctx.obj, Runtime):

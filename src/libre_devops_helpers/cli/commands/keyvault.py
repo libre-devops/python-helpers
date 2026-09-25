@@ -1,7 +1,7 @@
 """Key Vault commands: secrets, certificates and keys close to expiry. Never reads values."""
 
 from datetime import UTC, datetime, timedelta
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 
@@ -11,13 +11,17 @@ from libre_devops_helpers.cli.options import (
     NamesArgument,
     OutputOption,
     ProfileOption,
+    SortOption,
+    UniqueOption,
     duration,
     get_runtime,
 )
 from libre_devops_helpers.cli.render import Output
+from libre_devops_helpers.cli.runtime import MicrosoftRuntime
 from libre_devops_helpers.core.errors import ApiError, InputError
 from libre_devops_helpers.core.inputs import read_names
 from libre_devops_helpers.core.util import format_duration
+from libre_devops_helpers.microsoft.config import Profile
 from libre_devops_helpers.microsoft.keyvault import KINDS, ItemKind, VaultItem, expiring
 
 keyvault_app = typer.Typer(
@@ -34,6 +38,7 @@ _VAULTS_QUERY = (
 
 
 def register(app: typer.Typer) -> None:
+    """Add the ``keyvault`` commands to ``app``."""
     app.add_typer(keyvault_app, name="keyvault")
 
 
@@ -58,6 +63,8 @@ def expiry(
         bool, typer.Option("--include-disabled", help="Include disabled items.")
     ] = False,
     profile: ProfileOption = None,
+    sort: SortOption = None,
+    unique: UniqueOption = None,
     output: OutputOption = Output.TABLE,
 ) -> None:
     """List secrets, certificates and keys that expire soon, or already have.
@@ -66,14 +73,42 @@ def expiry(
     item is expiring but a vault could not be read.
     """
     window = duration(within) or timedelta(days=30)
-    known: dict[str, ItemKind] = {kind: kind for kind in KINDS}
-    chosen: list[ItemKind] = []
-    for kind in kinds or KINDS:
-        if kind not in known:
-            raise typer.BadParameter(f"--kind must be one of {', '.join(KINDS)}")
-        chosen.append(known[kind])
+    chosen = _kinds(kinds)
     runtime = get_runtime(ctx).microsoft
     selected = runtime.profile(profile)
+    names = _vault_names(runtime, selected, vaults, all_vaults)
+    now = datetime.now(UTC)
+    items, failed = _read_vaults(runtime, selected, names, chosen)
+    shown = expiring(items, window, now=now, include_disabled=include_disabled)
+    render.emit(
+        output,
+        ["VAULT", "KIND", "NAME", "EXPIRES", "DAYS LEFT", "ENABLED", "CONTENT TYPE"],
+        [_row(item, now) for item in shown],
+        [_record(item, now) for item in shown],
+    )
+    render.note(
+        f"{len(shown)} item(s) expire within {format_duration(window)} "
+        f"({len(items)} checked in {len(names) - len(failed)} vault(s))"
+    )
+    if shown:
+        raise typer.Exit(ATTENTION)
+    if failed:
+        raise typer.Exit(ERROR)
+
+
+def _kinds(kinds: list[str] | None) -> list[ItemKind]:
+    """The --kind values, checked; every kind when none is given."""
+    known: dict[str, ItemKind] = {kind: kind for kind in KINDS}
+    for kind in kinds or ():
+        if kind not in known:
+            raise typer.BadParameter(f"--kind must be one of {', '.join(KINDS)}")
+    return [known[kind] for kind in kinds or KINDS]
+
+
+def _vault_names(
+    runtime: MicrosoftRuntime, selected: Profile, vaults: list[str] | None, all_vaults: bool
+) -> list[str]:
+    """The vaults named, and with --all-vaults every one Resource Graph finds, once each."""
     names = read_names(vaults or [])
     if all_vaults:
         scope = [selected.subscription_id] if selected.subscription_id else []
@@ -81,45 +116,37 @@ def expiry(
         names.extend(str(row.get("name")) for row in found.rows if row.get("name"))
     if not names:
         raise InputError("no vaults given", hint="name them, or pass --all-vaults")
+    return list(dict.fromkeys(names))
 
-    now = datetime.now(UTC)
+
+def _read_vaults(
+    runtime: MicrosoftRuntime, selected: Profile, names: list[str], kinds: list[ItemKind]
+) -> tuple[list[VaultItem], list[str]]:
+    """Every item of ``kinds`` in each vault, and the vaults that could not be read (each
+    warned about, so one refused vault does not hide the rest)."""
     items: list[VaultItem] = []
     failed: list[str] = []
-    for name in dict.fromkeys(names):
+    for name in names:
         try:
-            items.extend(runtime.keyvault(selected, name).items(chosen))
+            items.extend(runtime.keyvault(selected, name).items(kinds))
         except ApiError as exc:
             failed.append(name)
             render.warn(f"cannot read vault {name}: {exc}")
             if exc.hint:
                 render.note(f"hint: {exc.hint}")
-    shown = expiring(items, window, now=now, include_disabled=include_disabled)
-    render.emit(
-        output,
-        ["VAULT", "KIND", "NAME", "EXPIRES", "DAYS LEFT", "ENABLED", "CONTENT TYPE"],
-        [_row(item, now) for item in shown],
-        [
-            {
-                "vault": item.vault,
-                "kind": item.kind,
-                "name": item.name,
-                "expires": item.expires,
-                "days_left": item.days_left(now),
-                "enabled": item.enabled,
-                "attributes": item.raw.get("attributes"),
-            }
-            for item in shown
-        ],
-    )
-    checked = len(dict.fromkeys(names)) - len(failed)
-    render.note(
-        f"{len(shown)} item(s) expire within {format_duration(window)} "
-        f"({len(items)} checked in {checked} vault(s))"
-    )
-    if shown:
-        raise typer.Exit(ATTENTION)
-    if failed:
-        raise typer.Exit(ERROR)
+    return items, failed
+
+
+def _record(item: VaultItem, now: datetime) -> dict[str, Any]:
+    return {
+        "vault": item.vault,
+        "kind": item.kind,
+        "name": item.name,
+        "expires": item.expires,
+        "days_left": item.days_left(now),
+        "enabled": item.enabled,
+        "attributes": item.raw.get("attributes"),
+    }
 
 
 def _row(item: VaultItem, now: datetime) -> list[render.Cell]:

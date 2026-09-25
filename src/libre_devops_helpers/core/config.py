@@ -41,7 +41,7 @@ CONFIG_HEADER = f"""\
 # ca_bundle = "~/certs/proxy-ca.pem"
 """
 
-_NAME = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+_NAME = re.compile(r"[a-z0-9][a-z0-9_-]*")
 NETWORK_KEYS = ("ca_bundle", "proxy", "no_proxy")
 
 
@@ -134,17 +134,19 @@ def parse_config_file(
 
 def check_name(name: str, where: str) -> None:
     """Profile and instance names are lowercase, so they are easy to type and complete."""
-    if not _NAME.match(name):
+    if not _NAME.fullmatch(name):
         raise ConfigError(f"{where}: use lowercase letters, digits, '-' and '_' in names")
 
 
 def table(value: object, where: str) -> Mapping[str, Any]:
+    """``value`` when it is a TOML table, else a ConfigError naming ``where``."""
     if not isinstance(value, dict):
         raise ConfigError(f"{where}: expected a table")
     return value
 
 
 def guid(data: Mapping[str, Any], key: str, where: str) -> str | None:
+    """``data[key]`` as a lowercase GUID, None when absent, or a ConfigError."""
     value = data.get(key)
     if value is None:
         return None
@@ -154,6 +156,7 @@ def guid(data: Mapping[str, Any], key: str, where: str) -> str | None:
 
 
 def text(data: Mapping[str, Any], key: str, where: str) -> str | None:
+    """``data[key]`` as a stripped string, None when absent, or a ConfigError."""
     value = data.get(key)
     if value is None:
         return None
@@ -163,7 +166,8 @@ def text(data: Mapping[str, Any], key: str, where: str) -> str | None:
 
 
 def https_url(data: Mapping[str, Any], key: str, where: str) -> str | None:
-    # Tokens are attached to every request, so plain http is never acceptable.
+    """``data[key]`` as an https URL without a trailing slash, None when absent, or a
+    ConfigError. Tokens go with every request, so plain http is never acceptable."""
     value = text(data, key, where)
     if value is not None and not value.startswith("https://"):
         raise ConfigError(f"{where}: {key} must be an https:// URL")
@@ -171,6 +175,7 @@ def https_url(data: Mapping[str, Any], key: str, where: str) -> str | None:
 
 
 def reject_unknown(data: Mapping[str, Any], allowed: frozenset[str], where: str) -> None:
+    """A ConfigError naming any key in ``data`` outside ``allowed``: most often a typo."""
     unknown = sorted(set(data) - allowed)
     if unknown:
         raise ConfigError(

@@ -20,12 +20,11 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+from libre_devops_helpers.core import fields
 from libre_devops_helpers.core.errors import InputError
 from libre_devops_helpers.core.tables import QueryResult
-from libre_devops_helpers.core.util import candidate_names, parse_datetime, short_name
+from libre_devops_helpers.core.util import candidate_names, require_host, short_name
 
-# Device names go into the query, so only what a host name can hold is let in.
-_HOST = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,252}$")
 UP_TO_DATE_CHECK = "scid-2011"
 # AdditionalFields.AvMode is a number; these are the ones Defender documents.
 AV_MODES = {"0": "active", "1": "passive", "4": "EDR block"}
@@ -83,9 +82,7 @@ def av_query(names: Sequence[str]) -> str:
     """The KQL for ``names``: each device's FQDN and short name are both looked for."""
     wanted: list[str] = []
     for name in names:
-        if not _HOST.match(name.strip()):
-            raise InputError(f"{name!r} is not a device name that can go in a query")
-        wanted.extend(candidate_names(name))
+        wanted.extend(candidate_names(require_host(name)))
     if not wanted:
         raise InputError("no devices named")
     unique = list(dict.fromkeys(item.lower() for item in wanted))
@@ -106,13 +103,13 @@ def av_statuses(names: Iterable[str], result: QueryResult) -> list[AvStatus]:
         matched = [
             row
             for row in rows
-            if str(row.get("DeviceName", "")).lower() in {full, short}
-            or short_name(str(row.get("DeviceName", ""))).lower() == short
+            if fields.text(row, "DeviceName").lower() in {full, short}
+            or short_name(fields.text(row, "DeviceName")).lower() == short
         ]
         if not matched:
             statuses.append(AvStatus(query=name, found=False))
             continue
-        matched.sort(key=lambda row: str(row.get("Reported") or ""), reverse=True)
+        matched.sort(key=lambda row: fields.text(row, "Reported"), reverse=True)
         statuses.extend(_status(name, row) for row in matched)
     return statuses
 
@@ -136,14 +133,14 @@ def _status(query: str, row: Mapping[str, Any]) -> AvStatus:
     return AvStatus(
         query=query,
         found=True,
-        device_id=str(row.get("DeviceId") or ""),
-        device_name=str(row.get("DeviceName") or ""),
-        os_platform=str(row.get("OSPlatform") or ""),
-        signature=str(row.get("AvSignatureVersion") or ""),
-        engine=str(row.get("AvEngineVersion") or ""),
-        platform=str(row.get("AvPlatformVersion") or ""),
+        device_id=fields.text(row, "DeviceId"),
+        device_name=fields.text(row, "DeviceName"),
+        os_platform=fields.text(row, "OSPlatform"),
+        signature=fields.text(row, "AvSignatureVersion"),
+        engine=fields.text(row, "AvEngineVersion"),
+        platform=fields.text(row, "AvPlatformVersion"),
         mode=mode_label(row.get("AvMode")),
         up_to_date=up_to_date if isinstance(up_to_date, bool) else None,
-        reported=parse_datetime(row.get("Reported")),
+        reported=fields.when(row, "Reported"),
         raw=dict(row),
     )

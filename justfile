@@ -39,6 +39,11 @@ run *args:
 lint:
     uv run ruff check src tests scripts
 
+# Type-check the package, strictly (the settings are in pyproject.toml)
+[group('check')]
+typecheck:
+    uv run mypy
+
 # Check formatting without changing files
 [group('check')]
 fmt-check:
@@ -58,16 +63,16 @@ test *args:
 # Run the tests on the oldest supported Python
 [group('check')]
 test-311 *args:
-    uv run --python 3.11 --isolated --with pytest --with pyyaml --with-editable . pytest {{ args }}
+    uv run --python 3.11 --isolated --with pytest --with pyyaml --with trustme --with jsonschema --with-editable . pytest {{ args }}
 
 # Run the tests with line and branch coverage; fails below the floor in pyproject.toml
 [group('check')]
 coverage *args:
     uv run pytest --cov --cov-report=term-missing {{ args }}
 
-# Lint, format check and tests with coverage: what every change must pass
+# Lint, format check, type check and tests with coverage: what every change must pass
 [group('check')]
-check: lint fmt-check coverage
+check: lint fmt-check typecheck coverage
 
 # Audit the locked dependencies for known vulnerabilities, as CI does
 [group('check')]

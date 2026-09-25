@@ -11,6 +11,8 @@ from libre_devops_helpers.cli.options import (
     OutputOption,
     ProfileOption,
     SheetOption,
+    SortOption,
+    UniqueOption,
     get_runtime,
     names,
 )
@@ -24,6 +26,7 @@ intune_app = typer.Typer(
 
 
 def register(app: typer.Typer) -> None:
+    """Add the ``intune`` commands to ``app``."""
     app.add_typer(intune_app, name="intune")
 
 
@@ -35,6 +38,8 @@ def devices(
     column: ColumnOption = None,
     sheet: SheetOption = None,
     profile: ProfileOption = None,
+    sort: SortOption = None,
+    unique: UniqueOption = None,
     output: OutputOption = Output.TABLE,
 ) -> None:
     """Look devices up in Intune: compliance, last sync, owner and Entra link.

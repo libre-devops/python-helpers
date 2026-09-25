@@ -25,6 +25,7 @@ def render(root: Path = ROOT) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Write AGENTS.md from AI.md, or with --check say whether it is current (1 if not)."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--check", action="store_true", help="only report whether it is current")
     parser.add_argument("--root", type=Path, default=ROOT, help="the repository")

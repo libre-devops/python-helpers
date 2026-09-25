@@ -8,15 +8,14 @@ enough for all of it), not on token scopes.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import Any, Self
+from typing import Any
 
-import requests
-
-from libre_devops_helpers.core.auth import TokenProvider, token_source
-from libre_devops_helpers.core.errors import ApiError, LdoError
+from libre_devops_helpers.core import fields
+from libre_devops_helpers.core.errors import ApiError, InputError
 from libre_devops_helpers.core.http import ApiClient
 from libre_devops_helpers.core.tables import QueryResult
-from libre_devops_helpers.core.util import is_guid
+from libre_devops_helpers.core.util import require_guid
+from libre_devops_helpers.microsoft.api_clients import ArmServiceClient
 from libre_devops_helpers.microsoft.azure.models import (
     Assessment,
     AzureRoleAssignment,
@@ -25,8 +24,6 @@ from libre_devops_helpers.microsoft.azure.models import (
     SecureScoreControl,
     Subscription,
 )
-from libre_devops_helpers.microsoft.clouds import PUBLIC
-from libre_devops_helpers.microsoft.config import Profile
 
 SUBSCRIPTIONS_API = "2022-12-01"
 RESOURCE_GRAPH_API = "2022-10-01"
@@ -39,55 +36,12 @@ PRICINGS_API = "2024-01-01"
 _GRAPH_PAGE = 1000
 
 
-class AzureClient:
+class AzureClient(ArmServiceClient):
     """Azure Resource Manager lookups. Close it (or use ``with``) when done."""
 
     def __init__(self, api: ApiClient) -> None:
-        self.api = api
+        super().__init__(api)
         self._role_names: dict[str, str] = {}
-
-    @classmethod
-    def create(
-        cls,
-        tokens: TokenProvider,
-        tenant_id: str,
-        *,
-        arm_url: str = PUBLIC.arm_url,
-        verify: bool | str = True,
-        session: requests.Session | None = None,
-    ) -> AzureClient:
-        """A client for ``tenant_id`` that takes its ARM tokens from ``tokens``."""
-        api = ApiClient(
-            arm_url,
-            token_source(tokens, arm_url.rstrip("/") + "/", tenant_id),
-            name="Azure Resource Manager",
-            verify=verify,
-            session=session,
-        )
-        return cls(api)
-
-    @classmethod
-    def for_profile(
-        cls,
-        profile: Profile,
-        tokens: TokenProvider,
-        *,
-        verify: bool | str = True,
-        session: requests.Session | None = None,
-    ) -> AzureClient:
-        """A client for a configured profile's tenant, in the profile's cloud."""
-        return cls.create(
-            tokens, profile.tenant_id, arm_url=profile.cloud.arm_url, verify=verify, session=session
-        )
-
-    def close(self) -> None:
-        self.api.close()
-
-    def __enter__(self) -> Self:
-        return self
-
-    def __exit__(self, *exc_info: object) -> None:
-        self.close()
 
     # Subscriptions ----------------------------------------------------------------
 
@@ -112,7 +66,7 @@ class AzureClient:
         read in the tenant.
         """
         if not query.strip():
-            raise LdoError("the Resource Graph query is empty")
+            raise InputError("the Resource Graph query is empty")
         scope = [_subscription_id(item) for item in subscriptions]
         rows: list[dict[str, Any]] = []
         skip_token: str | None = None
@@ -154,7 +108,7 @@ class AzureClient:
         ``assignedTo()`` includes assignments made to groups the principal belongs to,
         and those inherited from management groups above each subscription.
         """
-        principal_id = _guid(principal_id, "principal id")
+        principal_id = require_guid(principal_id, "a principal id")
         seen: dict[str, AzureRoleAssignment] = {}
         for subscription_id in subscription_ids:
             items = self.api.get_all(
@@ -167,11 +121,11 @@ class AzureClient:
                 next_link="nextLink",
             )
             for item in items:
-                assignment_id = str(item.get("id") or "")
+                assignment_id = fields.text(item, "id")
                 if assignment_id and assignment_id not in seen:
                     properties = item.get("properties")
                     definition = (
-                        str(properties.get("roleDefinitionId") or "")
+                        fields.text(properties, "roleDefinitionId")
                         if isinstance(properties, dict)
                         else ""
                     )
@@ -187,7 +141,7 @@ class AzureClient:
             try:
                 data = self.api.get(definition_id, params={"api-version": AUTHORIZATION_API})
                 properties = data.get("properties")
-                name = str(properties.get("roleName") or "") if isinstance(properties, dict) else ""
+                name = fields.text(properties, "roleName") if isinstance(properties, dict) else ""
             except ApiError:
                 # The assignment is still worth showing without a friendly name.
                 name = ""
@@ -250,11 +204,5 @@ class AzureClient:
         return sorted(plans, key=lambda plan: plan.name.casefold())
 
 
-def _guid(value: str, what: str) -> str:
-    if not is_guid(value):
-        raise LdoError(f"not a {what}: {value!r}")
-    return value.strip().lower()
-
-
 def _subscription_id(value: str) -> str:
-    return _guid(value, "subscription id")
+    return require_guid(value, "a subscription id")

@@ -6,7 +6,7 @@ import pytest
 from fakes.clock import FakeClock
 from fakes.devices import GROUP_ID, NOW, FakeTenant, clients, intune_client
 from libre_devops_helpers.core.auth import AccessToken
-from libre_devops_helpers.core.errors import ApiError, InputError, LdoError, ReauthRequired
+from libre_devops_helpers.core.errors import ApiError, InputError, ReauthRequired
 from libre_devops_helpers.core.poll import PollLimits
 from libre_devops_helpers.microsoft.devices import (
     DeviceChecker,
@@ -97,7 +97,8 @@ def test_only_the_services_the_expectations_need_are_called():
     run = DeviceChecker(entra=entra).check(["web01"], Expectations(onboarded=False))
     assert run.complete
     assert not any("/api/machines" in url for url in tenant.calls)
-    with pytest.raises(LdoError, match="Defender"):
+    # A caller's mistake, not a person's: a plain ValueError, as for any bad argument.
+    with pytest.raises(ValueError, match="Defender"):
         DeviceChecker(entra=entra).check(["web01"], Expectations())
 
 

@@ -11,6 +11,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from libre_devops_helpers.core import fields
 from libre_devops_helpers.microsoft.process import AzCliError, AzureCliRunner, signed_out
 
 
@@ -32,14 +33,15 @@ class Account:
 
     @classmethod
     def from_json(cls, data: Mapping[str, Any]) -> Account:
+        """An account as ``az account list`` prints it."""
         user = data.get("user")
         return cls(
-            id=str(data.get("id", "")).lower(),
-            name=str(data.get("name", "")),
-            tenant_id=str(data.get("tenantId", "")).lower(),
-            state=str(data.get("state", "")),
+            id=fields.text(data, "id").lower(),
+            name=fields.text(data, "name"),
+            tenant_id=fields.text(data, "tenantId").lower(),
+            state=fields.text(data, "state"),
             is_default=bool(data.get("isDefault", False)),
-            user=str(user.get("name", "")) if isinstance(user, Mapping) else "",
+            user=fields.text(user, "name") if isinstance(user, Mapping) else "",
         )
 
 
