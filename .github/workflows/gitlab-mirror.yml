@@ -1,0 +1,90 @@
+name: GitLab mirror
+
+# Keeps a copy of this repository on GitLab: every branch and tag as it is here, and gone
+# there once it is gone here. It is one way. Changes are made here, and anything pushed to
+# the copy directly is overwritten or removed by the next run. The copy is where the GitLab
+# CI (.gitlab-ci.yml) is proven, ahead of the code moving to a GitLab of its own.
+#
+# It pushes over SSH with a deploy key that can write to that one project and nothing else,
+# set up as (see docs/development.md, "The GitLab mirror"):
+#
+#   vars.GITLAB_MIRROR_URL          the project's SSH URL
+#   vars.GITLAB_MIRROR_KNOWN_HOSTS  the GitLab host's SSH keys, checked against the
+#                                   fingerprints it publishes
+#   secrets.GITLAB_MIRROR_SSH_KEY   the deploy key's private half
+#
+# Without them (in a fork, say) the job is skipped. No third-party action is used.
+on:
+  push:
+    branches: ["**"]
+    tags: ["**"]
+  delete:
+  # The badges branch is pushed with a workflow's own token, which starts no other
+  # workflow, so its push is caught here instead.
+  workflow_run:
+    workflows: ["Badges"]
+    types: [completed]
+  # Whatever else no event announced, or a run that failed.
+  schedule:
+    - cron: "23 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One run at a time, and never cancelled: each clones afresh, so the last to run pushes
+# the latest state.
+concurrency:
+  group: gitlab-mirror
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    name: Mirror to GitLab
+    # Dependabot's runs get no secrets; the next run mirrors its branches.
+    if: >-
+      vars.GITLAB_MIRROR_URL != '' &&
+      github.actor != 'dependabot[bot]' &&
+      (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Mirror every branch and tag
+        env:
+          SSH_KEY: ${{ secrets.GITLAB_MIRROR_SSH_KEY }}
+          KNOWN_HOSTS: ${{ vars.GITLAB_MIRROR_KNOWN_HOSTS }}
+          TARGET: ${{ vars.GITLAB_MIRROR_URL }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ -z "$SSH_KEY" ] || [ -z "$KNOWN_HOSTS" ]; then
+            echo "::error::GITLAB_MIRROR_SSH_KEY and GITLAB_MIRROR_KNOWN_HOSTS must be set too"
+            exit 1
+          fi
+
+          # The key and host keys go in a folder only this job can read, removed at the end.
+          # StrictHostKeyChecking=yes: a host whose key is not one of those given is refused.
+          ssh_dir="$RUNNER_TEMP/gitlab-ssh"
+          trap 'rm -rf "$ssh_dir"' EXIT
+          install -d -m 700 "$ssh_dir"
+          (umask 077 && printf '%s\n' "$SSH_KEY" > "$ssh_dir/key")
+          printf '%s\n' "$KNOWN_HOSTS" > "$ssh_dir/known_hosts"
+          export GIT_SSH_COMMAND="ssh -i $ssh_dir/key -o IdentitiesOnly=yes -o UserKnownHostsFile=$ssh_dir/known_hosts -o StrictHostKeyChecking=yes"
+
+          # A bare clone has this repository's branches and tags as its own, and nothing
+          # else (no pull request refs), so exactly those are pushed.
+          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          git -c "http.https://github.com/.extraheader=$auth" clone --bare --quiet \
+            "https://github.com/${GITHUB_REPOSITORY}.git" "$RUNNER_TEMP/repo.git"
+          cd "$RUNNER_TEMP/repo.git"
+
+          # --prune removes a branch or tag deleted here. GitLab refuses a force push to
+          # main, so main rewritten here fails this run rather than rewriting the copy.
+          git push --prune "$TARGET" '+refs/heads/*:refs/heads/*' '+refs/tags/*:refs/tags/*'
+
+          # The copy now holds exactly what this clone does.
+          diff \
+            <(git for-each-ref --format='%(objectname)%09%(refname)' refs/heads refs/tags | sort) \
+            <(git ls-remote "$TARGET" 'refs/heads/*' 'refs/tags/*' | grep -v '\^{}$' | sort)
+          echo "mirrored $(git for-each-ref refs/heads | wc -l) branch(es) and $(git for-each-ref refs/tags | wc -l) tag(s)"

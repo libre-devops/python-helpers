@@ -130,6 +130,8 @@ name in code: use `core/brand.py` (`brand.COMMAND`, `brand.env_var("X")`,
 ## Commits and releases
 
 - Do not commit, push, tag or release until the person asks. Use their own git identity.
+- Every branch and tag is mirrored to GitLab (`gitlab-mirror.yml`, see
+  `docs/development.md`). Never push to the GitLab copy: the next run overwrites it.
 - No AI attribution in commits or pull requests: no `Co-Authored-By` or "Generated with"
   lines.
 - Before a release, the person runs `ldo self-test` (hidden) in a real tenant; a CRASH or

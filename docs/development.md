@@ -91,10 +91,45 @@ runs. Rename anything from the tenant before sharing a report.
 | `container.yml` | builds both images for amd64 and arm64, smoke tests and scans the native ones, and publishes on a release or the weekly patch run |
 | `release.yml` | on a `v*` tag: CI, then the images, then the GitHub release of the files CI built |
 | `badges.yml` | after a passing run on `main`, publishes the coverage badge to the `badges` branch |
+| `gitlab-mirror.yml` | pushes every branch and tag to the GitLab copy, on each push and deletion, and daily |
 | `codeql.yml`, `dependency-review.yml` | CodeQL on every change and weekly; dependency review on pull requests |
 
 Third-party actions are pinned to a commit. Container findings with a fix go to the Security
 tab; the full scan is kept with each run.
+
+## The GitLab mirror
+
+[gitlab.com/libre-devops/python-helpers](https://gitlab.com/libre-devops/python-helpers) is
+a copy of this repository, kept by `gitlab-mirror.yml`: every branch and tag as it is here,
+and gone there once it is gone here. It is where the GitLab CI (`.gitlab-ci.yml`, committed
+here like any other file) is proven before the code moves to a GitLab of its own. It is one
+way: make changes here, since anything pushed to the copy directly is overwritten or removed
+by the next run.
+
+It runs on every push and deletion, after the badges are published, daily (for anything no
+event announced), and by hand (`gh workflow run gitlab-mirror.yml`). It pushes over SSH with
+a deploy key that can write to that one project and nothing else. On GitLab, `main` is
+protected: only Maintainers and that key may push, and never by force, so a `main` rewritten
+here fails the run instead of rewriting the copy. Auto DevOps is off, so no pipeline runs
+until there is a `.gitlab-ci.yml`.
+
+| Setting (GitHub repository) | Holds |
+| --- | --- |
+| `GITLAB_MIRROR_URL` (variable) | `git@gitlab.com:libre-devops/python-helpers.git` |
+| `GITLAB_MIRROR_KNOWN_HOSTS` (variable) | gitlab.com's SSH host keys, checked against [the fingerprints GitLab publishes](https://docs.gitlab.com/user/gitlab_com/#ssh-host-keys-fingerprints) |
+| `GITLAB_MIRROR_SSH_KEY` (secret) | the deploy key's private half |
+
+The deploy key expires on 2027-09-25, after which the runs fail. To replace it, or to point
+the mirror at another GitLab:
+
+1. `ssh-keygen -t ed25519 -N "" -C "github-actions: python-helpers mirror" -f mirror_key`
+2. Add `mirror_key.pub` to the GitLab project as a deploy key with write access (Settings,
+   Repository, Deploy keys), and allow it to push to `main` (Protected branches).
+3. `gh secret set GITLAB_MIRROR_SSH_KEY < mirror_key`, then delete `mirror_key`.
+4. For another host: `ssh-keyscan HOST > known_hosts`, check each key's `ssh-keygen -lf
+   known_hosts` fingerprint against the ones its administrators publish, then
+   `gh variable set GITLAB_MIRROR_KNOWN_HOSTS < known_hosts` and set `GITLAB_MIRROR_URL`.
+5. `gh workflow run gitlab-mirror.yml`, and remove the old deploy key.
 
 ## Releasing
 
