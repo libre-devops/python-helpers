@@ -77,7 +77,7 @@ def test_export_writes_the_modules_layout_and_keeps_what_is_there(config_file, t
     folder = tmp_path / "custom-detections"
     first = run(config_file, handler, ["xdr", "detections", "export", str(folder)])
     assert first.exit_code == 0, first.output
-    files = sorted(str(path.relative_to(folder)) for path in folder.rglob("*.yaml"))
+    files = sorted(path.relative_to(folder).as_posix() for path in folder.rglob("*.yaml"))
     assert files == [
         "command-and-control/certutil-download.yaml",
         "command-and-control/failing-rule.yaml",
