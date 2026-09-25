@@ -24,7 +24,7 @@ lock:
     uv lock
     uv lock --project container/azure-cli
 
-# Write AGENTS.md from AI.md, the instructions every AI coding assistant reads
+# Write AGENTS.md and Kiro's .kiro/steering/ from AI.md, the instructions every AI assistant reads
 [group('setup')]
 ai:
     uv run --no-sync python scripts/ai_instructions.py

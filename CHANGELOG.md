@@ -3,6 +3,16 @@
 All notable changes to libre-devops-helpers are recorded here. The project follows
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- Steering files for Kiro in `.kiro/steering/`, one for each section of `AI.md`: the
+  product, the stack, the layout, the code, the tests, the docs, releases and the pitfalls,
+  each loaded always or only while a file it covers is open. `just ai` writes them from
+  `AI.md`, with `AGENTS.md`, and a test keeps them in step, so there is still one file to
+  edit.
+
 ## 0.5.1
 
 The changes below, and those in the release candidates 0.5.1rc1 to 0.5.1rc3.

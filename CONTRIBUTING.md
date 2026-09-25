@@ -6,8 +6,9 @@ command or improving the documentation.
 ## Workflow
 
 Working with an AI coding assistant? Its instructions are in [AI.md](AI.md), which Claude
-Code, GitHub Copilot and Codex all read (through `CLAUDE.md`, `.github/copilot-instructions.md`
-and `AGENTS.md`). Edit `AI.md` and run `just ai`; a test fails when `AGENTS.md` lags behind.
+Code, GitHub Copilot, Codex and Kiro all read (through `CLAUDE.md`,
+`.github/copilot-instructions.md`, `AGENTS.md` and `.kiro/steering/`). Edit `AI.md` and run
+`just ai`; a test fails when a generated copy lags behind.
 
 1. Fork the repository and branch from `main`.
 2. Run `just sync` (or `uv sync`) to create the environment.

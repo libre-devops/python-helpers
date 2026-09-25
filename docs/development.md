@@ -16,7 +16,7 @@ just run devices check web01   # run ldo from the working tree
 just install               # put the working tree's ldo on PATH
 just lock                  # relock the tool and the image's Azure CLI
 just secrets               # the secret scan, uncommitted changes included (needs gitleaks)
-just ai                    # write AGENTS.md from AI.md, after editing AI.md
+just ai                    # write AGENTS.md and .kiro/steering/ from AI.md, after editing it
 ```
 
 Run `just` for the full list. See [CONTRIBUTING.md](../CONTRIBUTING.md) before opening a pull

@@ -2,9 +2,10 @@
 
 # Instructions for AI coding assistants
 
-This file is for Claude Code, GitHub Copilot, OpenAI Codex and any other assistant working
-in this repository. It is the one to edit: `AGENTS.md` is generated from it (`just ai`),
-`CLAUDE.md` imports it, and `.github/copilot-instructions.md` points here.
+This file is for Claude Code, GitHub Copilot, OpenAI Codex, Kiro and any other assistant
+working in this repository. It is the one to edit: `AGENTS.md`, and Kiro's steering files in
+`.kiro/steering/` (one per section), are generated from it (`just ai`), `CLAUDE.md` imports
+it, and `.github/copilot-instructions.md` points here.
 
 ## What this is
 
