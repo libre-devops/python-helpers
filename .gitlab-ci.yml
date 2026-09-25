@@ -1,0 +1,329 @@
+# GitLab CI for libre-devops-helpers.
+#
+# The same checks as GitHub's Lint and Test (.github/workflows/ci.yml), the container
+# images built, smoke tested and scanned as the Container workflow does, and for a release
+# tag, the release published to this project's own registries:
+#
+#   - the wheel and sdist to its PyPI package registry;
+#   - both images to its container registry, with the tags they have on GHCR;
+#   - a GitLab release that links to both.
+#
+# It never publishes anywhere else: PyPI and GHCR are GitHub's to publish to. On gitlab.com
+# it runs on the mirror of the GitHub repository (docs/development.md, "The GitLab mirror"),
+# to be proven before the code moves to a GitLab of its own. What depends on where it runs
+# is a variable, to set at the project or group level there:
+#
+#   UV_IMAGE_REPOSITORY, PODMAN_IMAGE, GITLEAKS_IMAGE   the images, e.g. through a proxy
+#   UV_DEFAULT_INDEX                                    a package index proxy (uv reads it)
+#
+# tests/project/test_gitlab_ci.py keeps the versions here in step with the GitHub workflows
+# and the Containerfile, which Dependabot updates; it cannot update this file.
+
+workflow:
+  # The default branch, release tags, and pipelines started by hand or on a schedule. Not
+  # every mirrored branch (Dependabot's, the badges): GitHub has checked those already, and
+  # each would spend CI minutes.
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+/
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_PIPELINE_SOURCE =~ /^(web|api|schedule)$/
+  # A newer push to the same branch cancels the checks still running for an older one.
+  auto_cancel:
+    on_new_commit: interruptible
+
+stages: [check, build, container, publish]
+
+variables:
+  # The uv image is the Containerfile's uv, on the Python each job tests.
+  UV_IMAGE_REPOSITORY: ghcr.io/astral-sh/uv
+  UV_VERSION: "0.12.18"
+  PYTHON: "3.13"
+  PODMAN_IMAGE: quay.io/podman/stable:v5.8.7-immutable@sha256:f345d8d4fddea244d3a1ced27bcec82d14cc9e32cb5ead7f5882b0baf59dc8b0
+  GITLEAKS_IMAGE: ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+  PIP_AUDIT_VERSION: "2.10.1"
+  TRIVY_VERSION: "0.74.0"
+  # From the release's checksums file. Bump both together.
+  TRIVY_SHA256: 2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a
+  # The public mirror first; ghcr.io rate limits anonymous database downloads.
+  TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db,ghcr.io/aquasecurity/trivy-db
+  # The image's own Python, never one uv downloads.
+  UV_PYTHON_DOWNLOADS: never
+
+default:
+  image: ${UV_IMAGE_REPOSITORY}:${UV_VERSION}-python${PYTHON}-trixie-slim
+  interruptible: true
+  timeout: 20 minutes
+  retry:
+    max: 1
+    when: [runner_system_failure, scheduler_failure, api_failure]
+  before_script:
+    # uv then fails, rather than quietly using another Python, if the image lacks this one.
+    - export UV_PYTHON="${PYTHON}"
+
+.release-tag: &release-tag
+  if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+/
+
+# Checks ------------------------------------------------------------------------------
+
+# Every commit, so a secret added and later removed is still found.
+secrets:
+  stage: check
+  image:
+    name: $GITLEAKS_IMAGE
+    entrypoint: [""]
+  variables:
+    GIT_DEPTH: "0"
+  script:
+    - git config --global --add safe.directory "${CI_PROJECT_DIR}"
+    - gitleaks git --config .gitleaks.toml --redact --verbose .
+
+lint:
+  stage: check
+  script:
+    # --locked fails the job when uv.lock is out of step with pyproject.toml.
+    - uv sync --locked
+    # The findings as a Code Quality report for GitLab, then the check that fails the job.
+    - uv run ruff check --exit-zero --output-format gitlab --output-file gl-code-quality.json src tests scripts
+    - uv run ruff check src tests scripts
+    # Check only: formatting is fixed locally with 'just fmt', never in CI.
+    - uv run ruff format --check src tests scripts
+    - uv run mypy
+  artifacts:
+    when: always
+    reports:
+      codequality: gl-code-quality.json
+
+# The locked, hashed dependency tree, runtime and dev, exactly as the jobs install it.
+audit:
+  stage: check
+  script:
+    - uv export --frozen --all-extras --format requirements-txt --no-emit-project --output-file /tmp/requirements.txt
+    - uvx "pip-audit==${PIP_AUDIT_VERSION}" --strict --disable-pip --require-hashes --requirement /tmp/requirements.txt
+
+# Every supported Python but the coverage job's. Includes the rebrand test, which renames a
+# copy of the repository and runs its whole suite.
+test:
+  stage: check
+  parallel:
+    matrix:
+      - PYTHON: ["3.11", "3.12", "3.14"]
+  script:
+    - uv sync --locked
+    - uv run python --version
+    - uv run pytest --junitxml=report.xml
+  artifacts:
+    when: always
+    reports:
+      junit: report.xml
+
+# Line and branch coverage, on one Python, so the number is the same on every run. The
+# floor (fail_under) is in pyproject.toml.
+coverage:
+  stage: check
+  script:
+    - uv sync --locked
+    - uv run python --version
+    - uv run pytest --cov --cov-report=term-missing --cov-report=xml --junitxml=report.xml
+  coverage: '/^TOTAL.*\s(\d+(?:\.\d+)?)%$/'
+  artifacts:
+    when: always
+    reports:
+      junit: report.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+
+# Build -------------------------------------------------------------------------------
+
+# Built once here; the release publishes these exact files rather than rebuilding.
+build:
+  stage: build
+  needs: [secrets, lint, audit, test, coverage]
+  # None of their artifacts (test reports): an sdist takes in what is in the checkout.
+  dependencies: []
+  script:
+    - |
+      set -euo pipefail
+      version="$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+      if [ -n "${CI_COMMIT_TAG:-}" ] && [ "v${version}" != "${CI_COMMIT_TAG}" ]; then
+        echo "tag ${CI_COMMIT_TAG} does not match pyproject.toml version ${version}"
+        exit 1
+      fi
+      uv build
+      # The wheel installs cleanly, and its entry point resolves outside the source tree.
+      uv venv --quiet /tmp/smoke
+      uv pip install --quiet --python /tmp/smoke dist/*.whl
+      /tmp/smoke/bin/ldo --version
+      /tmp/smoke/bin/ldo --help > /dev/null
+      # For the jobs after this one: the version, and the tags each image is published with.
+      echo "VERSION=${version}" > build.env
+      mkdir -p image-tags
+      for variant in az tool; do
+        python3 scripts/image_tags.py --version "${version}" --variant "${variant}" \
+          --stamp "$(date -u +%Y%m%d).${CI_PIPELINE_IID}" --latest > "image-tags/${variant}.txt"
+      done
+  artifacts:
+    paths: [dist/, image-tags/]
+    reports:
+      dotenv: build.env
+    expire_in: 14 days
+
+# Built, smoke tested and scanned for a release, by hand, and when the image's own files
+# change on the default branch; for a release tag, then pushed to this project's registry.
+# One platform (amd64): an emulated arm64 build would take most of the CI minutes.
+container:
+  stage: container
+  image: $PODMAN_IMAGE
+  needs: [build]
+  timeout: 60 minutes
+  parallel:
+    matrix:
+      # The default image. The Azure CLI pins its own dependencies, so only a fixed
+      # critical finding fails it (see container/azure-cli/pyproject.toml).
+      - VARIANT: az
+        GATE: CRITICAL
+      # The tool alone is ours to keep clean: any fixed high or critical finding fails.
+      - VARIANT: tool
+        GATE: HIGH,CRITICAL
+  rules:
+    - *release-tag
+    - if: $CI_PIPELINE_SOURCE =~ /^(web|api|schedule)$/
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      changes: [Containerfile, container/**/*, .gitlab-ci.yml]
+  script:
+    - |
+      set -euo pipefail
+      image="localhost/image:${VARIANT}"
+      podman build --target "${VARIANT}" --tag "${image}" \
+        --label "org.opencontainers.image.version=${VERSION}" \
+        --label "org.opencontainers.image.revision=${CI_COMMIT_SHA}" \
+        --label "org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+        .
+    - |
+      set -euo pipefail
+      image="localhost/image:${VARIANT}"
+      podman run --rm "${image}" --version | grep -F " ${VERSION}"
+      podman run --rm "${image}" devices check --help > /dev/null
+      test "$(podman run --rm --entrypoint id "${image}" -u)" != 0
+      if [ "${VARIANT}" = az ]; then
+        podman run --rm --entrypoint az "${image}" version --output none
+        # Signed out, the tool must reach az and report it, not crash.
+        if output="$(podman run --rm "${image}" az whoami 2>&1)"; then
+          echo "az whoami succeeded without a sign-in"
+          exit 1
+        fi
+        grep -F "not signed in" <<< "${output}"
+      fi
+    - |
+      set -euo pipefail
+      archive="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+      curl -fsSL -o "/tmp/${archive}" \
+        "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/${archive}"
+      echo "${TRIVY_SHA256}  /tmp/${archive}" | sha256sum -c -
+      tar -xzf "/tmp/${archive}" -C /tmp trivy
+      podman save --quiet --output /tmp/image.tar "localhost/image:${VARIANT}"
+      scan=(/tmp/trivy image --input /tmp/image.tar --cache-dir /tmp/trivy-cache --scanners vuln --quiet)
+      # Kept with the job: every finding, unfixed included, and the SBOM.
+      "${scan[@]}" --format table --output "trivy-${VARIANT}.txt"
+      "${scan[@]}" --format cyclonedx --output "sbom-${VARIANT}.cdx.json"
+      "${scan[@]}" --format table --severity HIGH,CRITICAL --ignore-unfixed
+      # The gate: a fixed finding at this severity fails the job.
+      "${scan[@]}" --format table --severity "${GATE}" --ignore-unfixed --exit-code 1 > /dev/null
+    - |
+      set -euo pipefail
+      if [[ ! "${CI_COMMIT_TAG:-}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+        echo "not a release tag: nothing to publish"
+        exit 0
+      fi
+      podman login --username "${CI_REGISTRY_USER}" --password-stdin "${CI_REGISTRY}" <<< "${CI_REGISTRY_PASSWORD}"
+      while read -r tag; do
+        podman push --quiet --digestfile /tmp/digest "localhost/image:${VARIANT}" \
+          "docker://${CI_REGISTRY_IMAGE}:${tag}"
+        echo "pushed ${CI_REGISTRY_IMAGE}:${tag} ($(cat /tmp/digest))"
+      done < "image-tags/${VARIANT}.txt"
+  artifacts:
+    when: always
+    paths: [trivy-$VARIANT.txt, sbom-$VARIANT.cdx.json]
+    expire_in: 30 days
+
+# Publish (release tags only) ---------------------------------------------------------
+
+# After the images, so the package never exists without them. A file already there (a
+# retried pipeline) is skipped, not an error.
+package:
+  stage: publish
+  needs: [build, container]
+  interruptible: false
+  rules:
+    - *release-tag
+  variables:
+    UV_PUBLISH_URL: ${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/pypi
+    UV_PUBLISH_CHECK_URL: ${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/pypi/simple
+    UV_PUBLISH_USERNAME: gitlab-ci-token
+  script:
+    - UV_PUBLISH_PASSWORD="${CI_JOB_TOKEN}" uv publish dist/*
+
+# The GitLab release, last: how to install from this project's registries, and the files'
+# checksums. A release that is there already (a retried pipeline) is left as it is.
+release:
+  stage: publish
+  needs: [build, package]
+  interruptible: false
+  rules:
+    - *release-tag
+  script:
+    - |
+      python3 - <<'PY'
+      import hashlib
+      import json
+      import os
+      import pathlib
+      import re
+      import urllib.error
+      import urllib.request
+
+      env = os.environ
+      tag, version = env["CI_COMMIT_TAG"], env["VERSION"]
+      files = sorted(pathlib.Path("dist").iterdir())
+      sums = "\n".join(f"{hashlib.sha256(f.read_bytes()).hexdigest()}  {f.name}" for f in files)
+      index = f"{env['CI_API_V4_URL']}/projects/{env['CI_PROJECT_ID']}/packages/pypi/simple"
+      image = env["CI_REGISTRY_IMAGE"]
+      final = re.fullmatch(r"\d+\.\d+\.\d+", version) is not None
+      notes = [
+          "" if final else "A pre-release: installed only by asking for this version.\n",
+          f"What changed: [CHANGELOG.md]({env['CI_PROJECT_URL']}/-/blob/{tag}/CHANGELOG.md).\n",
+          "```bash",
+          f"uv tool install --index {index} libre-devops-helpers=={version}",
+          f"podman pull {image}:{version}          # with the Azure CLI",
+          f"podman pull {image}:{version}-slim     # the tool alone",
+          "```\n",
+          "SHA256SUMS:\n",
+          "```text",
+          sums,
+          "```",
+      ]
+      body = {
+          "tag_name": tag,
+          "name": tag,
+          "description": "\n".join(notes).lstrip(),
+          "assets": {
+              "links": [
+                  {"name": "Package registry", "url": f"{env['CI_PROJECT_URL']}/-/packages", "link_type": "package"},
+                  {"name": "Container registry", "url": f"{env['CI_PROJECT_URL']}/container_registry", "link_type": "image"},
+              ]
+          },
+      }
+      request = urllib.request.Request(
+          f"{env['CI_API_V4_URL']}/projects/{env['CI_PROJECT_ID']}/releases",
+          data=json.dumps(body).encode(),
+          headers={"JOB-TOKEN": env["CI_JOB_TOKEN"], "Content-Type": "application/json"},
+          method="POST",
+      )
+      try:
+          with urllib.request.urlopen(request, timeout=30) as response:
+              print(f"created the release {tag}: {json.load(response)['_links']['self']}")
+      except urllib.error.HTTPError as error:
+          if error.code != 409:
+              raise SystemExit(f"creating the release failed: HTTP {error.code} {error.read()[:500]!r}")
+          print(f"the release {tag} is there already")
+      PY

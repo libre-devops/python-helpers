@@ -131,6 +131,44 @@ the mirror at another GitLab:
    `gh variable set GITLAB_MIRROR_KNOWN_HOSTS < known_hosts` and set `GITLAB_MIRROR_URL`.
 5. `gh workflow run gitlab-mirror.yml`, and remove the old deploy key.
 
+## GitLab CI
+
+`.gitlab-ci.yml` runs on the GitLab copy the same checks as `ci.yml` (gitleaks over every
+commit, ruff, mypy, pip-audit, pytest on Python 3.11 to 3.14, coverage against the floor, the
+build), and builds, smoke tests and scans the images as `container.yml` does. For a release
+tag, it then publishes the release to the project's own registries, and nowhere else:
+
+| Where | What |
+| --- | --- |
+| [Package registry](https://gitlab.com/libre-devops/python-helpers/-/packages) | the wheel and sdist, the files the pipeline built and tested |
+| [Container registry](https://gitlab.com/libre-devops/python-helpers/container_registry) | both images, with the tags they have on GHCR (`linux/amd64` only) |
+| [Releases](https://gitlab.com/libre-devops/python-helpers/-/releases) | a release linking to both, with how to install and the files' checksums |
+
+```bash
+uv tool install --index https://gitlab.com/api/v4/projects/86906408/packages/pypi/simple libre-devops-helpers
+podman pull registry.gitlab.com/libre-devops/python-helpers:latest
+```
+
+It runs for `main`, for release tags, and by hand, not for every mirrored branch, which would
+spend CI minutes (gitlab.com's Free plan has a monthly allowance). The images are built only
+for a release, by hand, or when their own files change on `main`. A version here that is not
+in GitHub's workflows fails `tests/project/test_gitlab_ci.py`, since Dependabot updates those
+and cannot update this file; the test also checks it publishes nowhere but GitLab.
+
+What GitHub has that it does not, yet: arm64 images (emulated, they would take most of the
+minutes), the weekly patched rebuild, build provenance attestations, and a security
+dashboard (a paid GitLab feature; the scan and SBOM are kept with each job instead).
+
+To move it to another GitLab, set these at the project or group level there:
+
+| Variable | For |
+| --- | --- |
+| `UV_IMAGE_REPOSITORY`, `PODMAN_IMAGE`, `GITLEAKS_IMAGE` | the images, e.g. through a registry proxy |
+| `UV_DEFAULT_INDEX` | a package index proxy, such as Artifactory, for uv |
+
+The container job runs podman inside its job container, which needs a runner that allows
+privileged containers, as gitlab.com's do.
+
 ## Releasing
 
 1. Set the version in `pyproject.toml` and `src/libre_devops_helpers/__init__.py` (a test

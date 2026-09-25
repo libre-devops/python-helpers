@@ -27,6 +27,10 @@ they land. Each image carries a build provenance attestation and an SBOM:
 gh attestation verify oci://ghcr.io/libre-devops/python-helpers:latest --owner libre-devops
 ```
 
+Each release is also in the GitLab copy's registry, for `linux/amd64`, with the same tags
+but for the weekly patched rebuilds (see [GitLab CI](development.md#gitlab-ci)):
+`registry.gitlab.com/libre-devops/python-helpers:latest`.
+
 ## Running it
 
 Give the Azure CLI's state a named volume, so you sign in once and later containers reuse

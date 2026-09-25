@@ -80,7 +80,9 @@ Keychain or the Linux Secret Service. A tagged release installs straight from Gi
 
 Or run the container image, which has the Azure CLI inside:
 `podman run --rm -it ghcr.io/libre-devops/python-helpers:latest --help`
-(see [Container images](docs/containers.md)).
+(see [Container images](docs/containers.md)). Each release is also in the
+[GitLab copy](https://gitlab.com/libre-devops/python-helpers)'s package and container
+registries ([how](docs/development.md#gitlab-ci)).
 
 ---
 

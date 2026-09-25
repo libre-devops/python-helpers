@@ -3,6 +3,16 @@
 All notable changes to libre-devops-helpers are recorded here. The project follows
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- Each release is also published to the GitLab copy of the repository,
+  [gitlab.com/libre-devops/python-helpers](https://gitlab.com/libre-devops/python-helpers):
+  the wheel and sdist to its package registry, both images (`linux/amd64`) to its container
+  registry, and a GitLab release. The repository is mirrored there automatically, and its
+  GitLab CI runs the same checks as GitHub's.
+
 ## 0.5.1rc3
 
 ### Added

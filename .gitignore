@@ -216,3 +216,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# What the GitLab CI (.gitlab-ci.yml) writes into the checkout, kept out of the sdist
+/report.xml
+/gl-code-quality.json
+/build.env
+/image-tags/
+/trivy-*.txt
+/sbom-*.cdx.json
