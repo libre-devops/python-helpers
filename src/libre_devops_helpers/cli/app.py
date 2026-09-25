@@ -30,6 +30,7 @@ from libre_devops_helpers.cli.commands import (
     pim,
     pretty,
     profiles,
+    selftest,
     snow,
     token,
     welcome,
@@ -131,6 +132,7 @@ for _module in (
     snow,
     pretty,
     network,
+    selftest,
 ):
     _module.register(app)
 # Token commands are about Entra-issued tokens, so they live in the entra group.

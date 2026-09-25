@@ -3,6 +3,24 @@
 All notable changes to libre-devops-helpers are recorded here. The project follows
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- `ldo self-test` (hidden from `--help`): runs every read-only command against a device,
+  user and group you name, discards their output, and reports each as ok, attention,
+  refused, usage or CRASH, a crash with the lines of `ldo` it came through. `--report`
+  writes it all to a file. For trying a build in a real tenant before a release.
+
+### Fixed
+
+- `xdr vulns` (and anything showing a date) crashed with `OverflowError` on Defender's
+  "not known" date, `0001-01-01`. Such dates now show as `-`, and a date the platform cannot
+  convert to local time is shown in UTC rather than failing.
+- A short name found nothing when Defender (or Entra) knows the device by its FQDN. It is
+  now looked for as the first label of one: `web01` finds `web01.corp.example`, never
+  `web010.corp.example`. `xdr machines` marks such a match `prefix`.
+
 ## 0.5.0
 
 ### Added

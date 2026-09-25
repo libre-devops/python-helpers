@@ -22,7 +22,7 @@ from libre_devops_helpers.cli.options import (
 )
 from libre_devops_helpers.cli.render import Output
 from libre_devops_helpers.core.errors import LdoError, NotFoundError
-from libre_devops_helpers.core.util import format_duration
+from libre_devops_helpers.core.util import format_duration, short_name
 from libre_devops_helpers.microsoft.xdr import Machine, MachineLookup, parse_severity
 
 xdr_app = typer.Typer(
@@ -103,7 +103,13 @@ def _machine_rows(lookups: list[MachineLookup], *, all_records: bool) -> list[li
         if lookup.machine is None:
             rows.append([lookup.query, ("not found", "red"), "", "", "", "", "", "", "0", ""])
             continue
-        matched = "fqdn" if lookup.matched_name == lookup.query.strip().rstrip(".") else "short"
+        query = lookup.query.strip().rstrip(".")
+        if lookup.matched_name == query:
+            matched = "fqdn"
+        elif lookup.matched_name == short_name(query):
+            matched = "short"
+        else:
+            matched = "prefix"  # a short name, found as the first label of Defender's FQDN
         rows.append(
             [
                 lookup.query,

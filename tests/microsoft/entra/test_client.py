@@ -288,3 +288,16 @@ def test_a_profile_in_another_cloud_uses_its_graph_host():
     EntraClient.for_profile(profile, tokens, session=session).find_devices("web01")
     assert urlsplit(adapter.requests[0].url).netloc == "graph.microsoft.us"
     assert tokens.calls[0] == ("https://graph.microsoft.us", TENANT)
+
+
+def test_a_short_name_finds_an_fqdn_display_name_by_its_first_label():
+    def handler(request):
+        text = unquote(request.url)
+        if "startswith(displayName,'web01.')" in text:
+            return (200, {"value": [device("web01.corp.example"), device("web010.corp.example")]})
+        return (200, {"value": []})
+
+    client, adapter, _ = entra(handler)
+    assert [d.display_name for d in client.find_devices("web01")] == ["web01.corp.example"]
+    filters = [query(r)["$filter"][0] for r in adapter.requests]
+    assert filters == ["displayName eq 'web01'", "startswith(displayName,'web01.')"]

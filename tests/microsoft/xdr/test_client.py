@@ -179,3 +179,41 @@ def test_indicators_are_read():
 def test_a_cloud_without_defender_is_refused():
     with pytest.raises(ConfigError, match="not available"):
         XdrClient.for_profile(Profile("cn", TENANT, cloud=CHINA), StaticTokens())
+
+
+def test_a_short_name_finds_defenders_fqdn_by_its_first_label_only():
+    fqdn = machine("APP07.corp.example", "2026-09-20T00:00:00Z")
+    lookalike = machine("app070.corp.example", "2026-09-21T00:00:00Z", "c" * 40)
+    seen = []
+
+    def handler(request):
+        text = unquote(request.url)
+        seen.append(query_of(text))
+        if "startswith(computerDnsName,'app07.')" in text:
+            return (200, {"value": [fqdn, lookalike]})  # a loose server match, filtered here
+        return (200, {"value": []})
+
+    client, _, _ = xdr(handler)
+    found = client.find_machine("app07")
+    assert found.matched_name == "APP07.corp.example"
+    assert [record.computer_dns_name for record in found.records] == ["APP07.corp.example"]
+    assert seen == [
+        "computerDnsName eq 'app07'",
+        "startswith(computerDnsName,'app07.')",
+    ]
+
+
+def test_an_fqdn_never_falls_back_to_a_prefix_search():
+    seen = []
+
+    def handler(request):
+        seen.append(query_of(unquote(request.url)))
+        return (200, {"value": []})
+
+    client, _, _ = xdr(handler)
+    assert not client.find_machine("web01.corp.example").found
+    assert seen == ["computerDnsName eq 'web01.corp.example'", "computerDnsName eq 'web01'"]
+
+
+def query_of(url: str) -> str:
+    return parse_qs(urlsplit(url).query)["$filter"][0]

@@ -183,3 +183,34 @@ def test_a_timespan_needs_graph(config_file):
     result = run(config_file, routes({}), args)
     assert result.exit_code == 2
     assert "--timespan is not available with --endpoint" in usage_error(result)
+
+
+def test_vulns_with_a_not_known_publish_date_show_a_dash(config_file):
+    rows = [
+        {
+            "id": "CVE-9",
+            "name": "undated",
+            "severity": "High",
+            "publishedOn": "0001-01-01T00:00:00Z",
+        }
+    ]
+    handler = routes(
+        {MACHINES: by_name, f"{MACHINES}/{MACHINE_ID}/vulnerabilities": (200, {"value": rows})}
+    )
+    result = run(config_file, handler, ["xdr", "vulns", "web01", "-o", "csv"])
+    assert result.exit_code == 0, result.output
+    row = dict(zip(*[line.split(",") for line in result.stdout.splitlines()[:2]], strict=True))
+    assert row["PUBLISHED"] == "-"
+
+
+def test_machines_found_by_a_short_name_say_so(config_file):
+    def prefixed(request):
+        text = unquote(request.url)
+        found = "startswith(computerDnsName,'app07.')" in text
+        return (200, {"value": [machine("app07.corp.example")] if found else []})
+
+    result = run(
+        config_file, routes({MACHINES: prefixed}), ["xdr", "machines", "app07", "-o", "csv"]
+    )
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines()[1].startswith("app07,prefix,")

@@ -111,15 +111,35 @@ class XdrClient:
         )
         return [Machine.from_json(item) for item in items]
 
+    def machines_starting(self, prefix: str) -> list[Machine]:
+        """Every machine record whose ``computerDnsName`` starts with ``prefix``."""
+        items = self.api.get_all(
+            "/api/machines",
+            params={"$filter": f"startswith(computerDnsName,{odata_string(prefix)})"},
+        )
+        return [Machine.from_json(item) for item in items]
+
     def find_machine(self, name: str) -> MachineLookup:
-        """Look one device up by FQDN, falling back to its short hostname."""
+        """Look one device up by FQDN, falling back to its short hostname.
+
+        A short name finds nothing when Defender knows the device by its FQDN, so it is
+        then looked for as the first label of one: ``web01`` finds
+        ``web01.corp.example.com``, never ``web010.corp.example.com``.
+        """
         for candidate in candidate_names(name):
             records = self.machines_named(candidate)
             if records:
-                newest_first = sorted(
-                    records, key=lambda machine: machine.last_seen or _NEVER, reverse=True
-                )
-                return MachineLookup(name, candidate, tuple(newest_first))
+                return MachineLookup(name, candidate, _newest_first(records))
+        short = name.strip().rstrip(".")
+        if short and "." not in short:
+            records = [
+                machine
+                for machine in self.machines_starting(f"{short}.")
+                if machine.computer_dns_name.split(".", 1)[0].casefold() == short.casefold()
+            ]
+            if records:
+                ordered = _newest_first(records)
+                return MachineLookup(name, ordered[0].computer_dns_name, ordered)
         return MachineLookup(name, None)
 
     def find_machines(self, names: Iterable[str]) -> list[MachineLookup]:
@@ -222,6 +242,10 @@ class XdrClient:
         if not columns:
             return QueryResult.from_records(rows)
         return QueryResult(tuple(columns), tuple(rows))
+
+
+def _newest_first(records: list[Machine]) -> tuple[Machine, ...]:
+    return tuple(sorted(records, key=lambda machine: machine.last_seen or _NEVER, reverse=True))
 
 
 def parse_severity(severity: str) -> int:

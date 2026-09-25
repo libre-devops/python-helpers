@@ -316,7 +316,12 @@ def when(value: datetime | None, *, now: datetime | None = None) -> str:
         relative = f"in {format_duration(value - now)}"
     else:
         relative = f"{format_duration(now - value)} ago"
-    return f"{value.astimezone():%Y-%m-%d %H:%M} ({relative})"
+    try:
+        local = value.astimezone()
+    except (OverflowError, OSError, ValueError):
+        # Outside what this platform's clock converts (before 1970, on Windows): say UTC.
+        return f"{value:%Y-%m-%d %H:%M} UTC ({relative})"
+    return f"{local:%Y-%m-%d %H:%M} ({relative})"
 
 
 def yes_no(value: bool | None) -> str:

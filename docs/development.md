@@ -29,6 +29,31 @@ module per concern. `tests/project` tests the project itself: the layering, the 
 layout, and that every example in these docs is a command that exists. Tests never touch the
 network, a real `az` or a real clock, so an hour-long watch runs in microseconds.
 
+## Trying a build in a real tenant
+
+The fakes cannot know everything a real tenant returns, so before a release, run the build
+against one. `ldo self-test` (hidden from `--help`) runs every read-only command against
+names you give, throws their output away, and reports what happened to each:
+
+```bash
+uv pip install --python ~/.venvs/ldo/bin/python "git+https://github.com/libre-devops/python-helpers@main"
+ldo self-test --device web01.corp.example --user ana@example.com --group "MDE Pilot Devices" --report self-test.json
+ldo self-test --device web01.corp.example --only xdr --only devices    # one area
+ldo self-test --device web01.corp.example --all                        # the slow listings too
+```
+
+| Result | Means |
+| --- | --- |
+| ok | it worked |
+| attention | it exited 3, having found something, as designed |
+| refused | it stopped with an error it explained: usually a permission or scope the sign-in lacks |
+| usage | it rejected its arguments: a bug in the test or the command |
+| CRASH | an exception escaped: a bug, with the lines of `ldo` it came through |
+
+It exits 1 on a crash or a usage error. Nothing it runs changes anything, and it prints no
+token; use a profile that is already signed in, since a sign-in cannot be answered while it
+runs. Rename anything from the tenant before sharing a report.
+
 ## CI
 
 | Workflow | What it does |
@@ -48,7 +73,7 @@ tab; the full scan is kept with each run.
    keeps them equal), run `just lock`, turn `## Unreleased` in `CHANGELOG.md` into
    `## <version>`, and move the pinned install lines in the docs to it (a test names any
    left behind).
-2. Merge to `main` and let CI pass.
+2. Merge to `main`, let CI pass, and run `ldo self-test` in a real tenant.
 3. `just release`: it checks the tree is clean and in step with `origin/main`, that the
    changelog has the version and the tag is new, then tags and pushes.
 

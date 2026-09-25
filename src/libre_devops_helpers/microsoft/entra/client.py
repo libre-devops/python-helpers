@@ -118,19 +118,28 @@ class EntraClient:
         Several results are normal: stale registrations keep the same name.
         """
         for candidate in candidate_names(name):
-            devices = [
-                EntraDevice.from_json(item)
-                for item in self.api.get_all(
-                    "/v1.0/devices",
-                    params={
-                        "$filter": f"displayName eq {odata_string(candidate)}",
-                        "$select": EntraDevice.SELECT,
-                    },
-                )
-            ]
+            devices = self._devices_matching(f"displayName eq {odata_string(candidate)}")
             if devices:
                 return devices
+        # A short name, where Entra holds the FQDN: its first label, exactly.
+        short = name.strip().rstrip(".")
+        if short and "." not in short:
+            return [
+                device
+                for device in self._devices_matching(
+                    f"startswith(displayName,{odata_string(short + '.')})"
+                )
+                if device.display_name.split(".", 1)[0].casefold() == short.casefold()
+            ]
         return []
+
+    def _devices_matching(self, query: str) -> list[EntraDevice]:
+        return [
+            EntraDevice.from_json(item)
+            for item in self.api.get_all(
+                "/v1.0/devices", params={"$filter": query, "$select": EntraDevice.SELECT}
+            )
+        ]
 
     def device_groups(
         self, device: EntraDevice | str, *, transitive: bool = True

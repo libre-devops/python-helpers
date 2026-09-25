@@ -78,6 +78,9 @@ def parse_datetime(value: object) -> datetime | None:
         return None
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=UTC)
+    if parsed.year < 1900:
+        # Microsoft APIs write 0001-01-01 (and, from Windows, 1601-01-01) for "not known".
+        return None
     return parsed.astimezone(UTC)
 
 

@@ -98,6 +98,9 @@ name in code: use `core/brand.py` (`brand.COMMAND`, `brand.env_var("X")`,
 - Do not commit, push, tag or release until the person asks. Use their own git identity.
 - No AI attribution in commits or pull requests: no `Co-Authored-By` or "Generated with"
   lines.
+- Before a release, the person runs `ldo self-test` (hidden) in a real tenant; a CRASH or
+  usage row there is a bug to fix first. Rename anything from their tenant before it goes
+  in a test.
 - A release is `just release` after the version is set in `pyproject.toml` and
   `src/libre_devops_helpers/__init__.py` and `CHANGELOG.md` has its section; see
   `docs/development.md`. Never move or reuse a released tag, and remember a PyPI version can

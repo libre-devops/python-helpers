@@ -126,3 +126,14 @@ def test_print_json_colours_on_a_terminal(monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "\x1b[" in out
     assert ANSI.sub("", out) == '{\n  "when": "2026-09-24T00:00:00+00:00"\n}\n'
+
+
+def test_a_date_the_platform_cannot_convert_is_shown_in_utc(monkeypatch):
+    class Unconvertible(datetime):
+        def astimezone(self, tz=None):
+            raise OverflowError("date value out of range")
+
+    value = Unconvertible(1969, 12, 31, 23, 0, tzinfo=UTC)
+    assert render.when(value, now=datetime(2026, 9, 25, tzinfo=UTC)).startswith(
+        "1969-12-31 23:00 UTC ("
+    )

@@ -93,3 +93,12 @@ def test_parse_duration_rejects_junk_and_zero(text):
 def test_odata_datetime_is_utc_with_a_z():
     local = datetime(2026, 9, 24, 13, 0, tzinfo=timezone(timedelta(hours=1)))
     assert odata_datetime(local) == "2026-09-24T12:00:00Z"
+
+
+@pytest.mark.parametrize("value", ["0001-01-01T00:00:00Z", "1601-01-01T00:00:00Z", "0001-01-01"])
+def test_microsofts_not_known_dates_are_none(value):
+    assert parse_datetime(value) is None
+
+
+def test_a_real_date_still_parses():
+    assert parse_datetime("2026-09-25T05:09:00Z").year == 2026
