@@ -27,7 +27,7 @@ from typing import Any
 import typer
 
 from libre_devops_helpers import __version__
-from libre_devops_helpers.core import brand, colour, sorting
+from libre_devops_helpers.core import brand, colour, picture, sorting
 from libre_devops_helpers.core.errors import LdoError
 from libre_devops_helpers.core.tables import QueryResult
 from libre_devops_helpers.core.util import format_duration
@@ -142,11 +142,37 @@ def banner(*, force: bool = False) -> None:
     if not force and (not sys.stderr.isatty() or os.environ.get(brand.env_var("NO_BANNER"))):
         return
     plain = colour.setting() is False
-    # Diagonal rainbow bands, which follow the unicorn's slant; any brand's art gets them.
-    for row, line in enumerate(brand.BANNER.strip("\n").splitlines()):
-        typer.echo(line if plain else colour.diagonal(line, row), err=True)
+    art = brand.BANNER.strip("\n").splitlines()
+    if brand.BANNER_PICTURE:
+        _picture(plain)
+        for line in art:
+            typer.echo(line if plain else colour.style(line, bold=True), err=True)
+    else:
+        # Diagonal rainbow bands, which follow the unicorn's slant; any brand's art gets them.
+        for row, line in enumerate(art):
+            typer.echo(line if plain else colour.diagonal(line, row), err=True)
     typer.secho(f"{brand.DISPLAY_NAME}  {brand.COMMAND} {__version__}", dim=True, err=True)
     typer.echo(err=True)
+
+
+def _picture(plain: bool) -> None:
+    """The brand's picture: in colour, with half blocks, where colour is on and stderr can
+    show them; else in its plain characters, so a log or an old console gets its shape."""
+    drawing = picture.parse(brand.BANNER_PICTURE)
+    coloured = not plain and shows_blocks(sys.stderr) and colour.wanted(sys.stderr)
+    for line in drawing.lines(coloured=coloured):
+        typer.echo(line, err=True, color=coloured or None)
+
+
+def shows_blocks(stream: Any) -> bool:
+    """Whether ``stream`` can take the half blocks a picture is drawn with: its encoding
+    holds them (UTF-8 does; an old Windows console's code page may not)."""
+    encoding = getattr(stream, "encoding", None) or "ascii"
+    try:
+        "\u2580\u2584\u2588".encode(encoding)
+    except (LookupError, UnicodeEncodeError):
+        return False
+    return True
 
 
 def title(text: str) -> str:

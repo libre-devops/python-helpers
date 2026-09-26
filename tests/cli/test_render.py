@@ -56,6 +56,42 @@ def test_the_banner_stays_out_of_pipes_and_when_turned_off(monkeypatch, capsys):
     assert capsys.readouterr().err == ""
 
 
+TINY = "p #1E3A8A :\nr #F97316 #\n---\nprrp\npppp\n"
+
+
+def test_a_brands_picture_is_drawn_in_colour_and_its_words_bold(monkeypatch, capsys):
+    as_terminal(monkeypatch)
+    monkeypatch.setenv("COLORTERM", "truecolor")
+    monkeypatch.setattr(brand, "BANNER_PICTURE", TINY)
+    render.banner()
+    err = capsys.readouterr().err
+    assert "\x1b[38;2;249;115;22m\x1b[48;2;30;58;138m\u2580" in err
+    first = brand.BANNER.strip("\n").splitlines()[0]
+    assert colour.style(first, bold=True) in err  # not in the rainbow: the picture has colour
+
+
+def test_without_colour_or_the_blocks_a_picture_is_drawn_plain(monkeypatch, capsys):
+    as_terminal(monkeypatch)
+    monkeypatch.setattr(brand, "BANNER_PICTURE", TINY)
+    monkeypatch.setenv("NO_COLOR", "1")
+    render.banner()
+    assert capsys.readouterr().err.splitlines()[0] == ":##:"
+    monkeypatch.delenv("NO_COLOR")
+    monkeypatch.setattr(render, "shows_blocks", lambda stream: False)
+    render.banner()
+    assert capsys.readouterr().err.splitlines()[0] == ":##:"
+
+
+@pytest.mark.parametrize(("encoding", "shown"), [("utf-8", True), ("cp1252", False), (None, False)])
+def test_blocks_need_an_encoding_that_holds_them(encoding, shown):
+    class Stream:
+        pass
+
+    stream = Stream()
+    stream.encoding = encoding
+    assert render.shows_blocks(stream) is shown
+
+
 def test_query_cells_flatten_nested_values_to_json(capsys):
     when = datetime(2026, 9, 24, 12, 0, tzinfo=UTC)
     result = QueryResult.from_records(

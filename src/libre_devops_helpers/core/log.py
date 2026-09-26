@@ -9,9 +9,9 @@ with data written to stdout.
 ``Write-LdoLog`` does in LibreDevOpsHelpers. An OpenTelemetry Collector reads it with the
 ``otlp_json_file`` receiver, or, from a container's logs, with the ``file_log`` receiver
 and the ``otlp_json`` connector, with no parsing rules either way. The two tools read the
-same variables (``LDO_LOG_FORMAT``, ``LDO_LOG_LEVEL``, ``LDO_SERVICE_NAME`` and the trace
-context), so one pipeline setting controls both. One difference is deliberate: with
-nothing set, this CLI writes readable text.
+same variables, so one pipeline setting controls both: ``LDO_LOG_FORMAT``,
+``LDO_LOG_LEVEL``, ``LDO_SERVICE_NAME`` and the trace context. One difference is
+deliberate: with nothing set, this CLI writes readable text.
 
 https://opentelemetry.io/docs/specs/otel/protocol/file-exporter/
 https://opentelemetry.io/docs/specs/otlp/#json-protobuf-encoding

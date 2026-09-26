@@ -74,19 +74,72 @@ def wanted(stream: Any = None) -> bool:
     return bool(getattr(stream, "isatty", lambda: False)())
 
 
-def style(text: str, fg: int | str | None = None, *, bold: bool = False, dim: bool = False) -> str:
-    """``text`` in ``fg`` (a 256-colour code, or a name such as ``green``), and bold or
-    dim, as ANSI codes; plain ``text`` when there is nothing to apply."""
+def style(
+    text: str,
+    fg: int | str | None = None,
+    *,
+    bg: int | str | None = None,
+    bold: bool = False,
+    dim: bool = False,
+) -> str:
+    """``text`` in ``fg`` on ``bg``, and bold or dim, as ANSI codes; plain ``text`` when
+    there is nothing to apply. A colour is a 256-colour code, a name such as ``green``, or
+    ``#RRGGBB``: exactly that where the terminal says it can show it, else the nearest of
+    the 256."""
     codes = []
-    if isinstance(fg, int):
-        codes.append(f"\x1b[38;5;{fg}m")
-    elif fg is not None:
-        codes.append(f"\x1b[{_CODES[fg]}m")
+    if fg is not None:
+        codes.append(_code(fg, background=False))
+    if bg is not None:
+        codes.append(_code(bg, background=True))
     if bold:
         codes.append("\x1b[1m")
     if dim:
         codes.append("\x1b[2m")
     return "".join(codes) + text + _RESET if codes else text
+
+
+def truecolour() -> bool:
+    """Whether the terminal says it shows 24-bit colour: ``COLORTERM`` (truecolor or
+    24bit), as most set it, or Windows Terminal, which always does."""
+    said = os.environ.get("COLORTERM", "").casefold() in {"truecolor", "24bit"}
+    return said or "WT_SESSION" in os.environ
+
+
+def nearest(hex_colour: str) -> int:
+    """The 256-colour code nearest ``#RRGGBB``: from the 6x6x6 cube, or the grey ramp."""
+    red, green, blue = (int(hex_colour[i : i + 2], 16) for i in (1, 3, 5))
+    steps = [_cube_step(value) for value in (red, green, blue)]
+    cube = 16 + 36 * steps[0] + 6 * steps[1] + steps[2]
+    cube_rgb = tuple(_LEVELS[step] for step in steps)
+    grey_step = min(23, max(0, round(((red + green + blue) / 3 - 8) / 10)))
+    grey_rgb = (8 + 10 * grey_step,) * 3
+
+    def distance(other: tuple[int, ...]) -> int:
+        return sum((a - b) ** 2 for a, b in zip((red, green, blue), other, strict=True))
+
+    return cube if distance(cube_rgb) <= distance(grey_rgb) else 232 + grey_step
+
+
+# The 256-colour cube's six levels for each of red, green and blue.
+_LEVELS = (0, 95, 135, 175, 215, 255)
+
+
+def _cube_step(value: int) -> int:
+    """The cube's level nearest ``value`` (0 to 255), as its index."""
+    return min(range(len(_LEVELS)), key=lambda index: abs(_LEVELS[index] - value))
+
+
+def _code(value: int | str, *, background: bool) -> str:
+    """The ANSI code for one colour, in front (38) or behind (48)."""
+    layer = 48 if background else 38
+    if isinstance(value, int):
+        return f"\x1b[{layer};5;{value}m"
+    if value.startswith("#"):
+        if truecolour():
+            red, green, blue = (int(value[i : i + 2], 16) for i in (1, 3, 5))
+            return f"\x1b[{layer};2;{red};{green};{blue}m"
+        return f"\x1b[{layer};5;{nearest(value)}m"
+    return f"\x1b[{_CODES[value] + (10 if background else 0)}m"
 
 
 def strip(text: str) -> str:

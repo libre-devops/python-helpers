@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote
 
+from libre_devops_helpers.core import brand
 from libre_devops_helpers.core.errors import ApiError, InputError, NotFoundError
 from libre_devops_helpers.core.util import is_guid
 from libre_devops_helpers.microsoft.api_clients import ArmServiceClient
@@ -78,7 +79,7 @@ class LogicAppsClient(ArmServiceClient):
         name: str | None = None,
     ) -> Validation:
         """Ask the provider whether it would accept ``document``; nothing is deployed."""
-        workflow = _name(name or document.name or "ldo-validate-probe")
+        workflow = _name(name or document.name or f"{brand.COMMAND}-validate-probe")
         if not _LOCATION.fullmatch(location):
             raise InputError(f"{location!r} is not an Azure region name, such as uksouth")
         # The body is a workflow resource: the definition, and the parameter VALUES beside

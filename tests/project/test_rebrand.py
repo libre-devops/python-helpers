@@ -19,6 +19,9 @@ SKIP = shutil.ignore_patterns(
     ".git", ".venv", "__pycache__", ".pytest_cache", ".ruff_cache", "dist", "build", "uv.lock"
 )
 
+# A picture above it: an orange bar on blue.
+PICTURE = "p #1E3A8A @\nr #F97316 #\n---\nprrp\npppp\n"
+
 BANNER = r"""
    ___  _   _ ___  ___  _  _
   / _ \| | | |_ _|/ __|| \| |   an example logo
@@ -33,6 +36,8 @@ def rebranded(tmp_path_factory) -> Path:
     shutil.copytree(REPO, root, ignore=SKIP)
     banner = root.parent / "banner.txt"
     banner.write_text(BANNER, encoding="utf-8")
+    drawing = root.parent / "picture.txt"
+    drawing.write_text(PICTURE, encoding="utf-8")
     subprocess.run(
         [
             sys.executable,
@@ -49,6 +54,8 @@ def rebranded(tmp_path_factory) -> Path:
             "https://git.example.test/platform/quincy",
             "--banner",
             str(banner),
+            "--banner-picture",
+            str(drawing),
             "--no-verify",
         ],
         check=True,
@@ -65,8 +72,8 @@ def old_names() -> list[re.Pattern[str]]:
         re.compile(rf"(?<![\w/-]){re.escape(brand['distribution'])}(?![\w-])"),
         re.compile(rf"\b{re.escape(brand['package'])}\b"),
         re.compile(rf"\b{re.escape(brand['error_class'])}\b"),
-        re.compile(rf"\b{re.escape(brand['env_prefix'])}_(?=[A-Z])"),
-        re.compile(rf"(?<![\w-]){re.escape(brand['command'])}(?![\w-])"),
+        re.compile(rf"\b{re.escape(brand['env_prefix'])}_(?![a-z0-9])"),
+        re.compile(rf"(?<![\w-]){re.escape(brand['command'])}(?![\w])"),
         re.compile(re.escape(brand["repository"])),
     ]
 
@@ -90,6 +97,17 @@ def test_no_old_name_survives_outside_the_licence(rebranded):
 
 def test_the_licence_and_its_notice_are_untouched(rebranded):
     assert (rebranded / "LICENSE").read_bytes() == (REPO / "LICENSE").read_bytes()
+
+
+def test_the_banner_picture_is_set_and_drawn(rebranded):
+    code = (
+        "from quincy_tools.core import brand, picture; "
+        "print(picture.parse(brand.BANNER_PICTURE).lines(coloured=False))"
+    )
+    drawn = subprocess.run(
+        [sys.executable, "-c", code], env=environment(rebranded), capture_output=True, text=True
+    )
+    assert drawn.stdout.strip() == "['@##@']", drawn.stderr
 
 
 def test_the_package_moved_and_brand_toml_records_the_new_names(rebranded):

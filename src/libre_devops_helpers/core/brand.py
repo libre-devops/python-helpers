@@ -45,6 +45,13 @@ BANNER = r"""
 """
 # banner-end
 
+# A picture drawn above the banner, in its own colours: a logo, say (see core/picture.py
+# for the format). None here; 'just rebrand --banner-picture FILE' sets one. With it, the
+# banner's words are printed as they are, rather than in the rainbow.
+# picture-start
+BANNER_PICTURE = r""""""
+# picture-end
+
 
 def env_var(name: str) -> str:
     """The environment variable ``name`` under this tool's prefix, e.g. ``LDO_CONFIG``."""

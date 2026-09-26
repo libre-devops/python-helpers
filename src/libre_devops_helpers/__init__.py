@@ -1,4 +1,6 @@
-"""Libre DevOps Helpers: helpers and a CLI for Azure, Entra, Defender and more.
+"""Helpers and a CLI for Azure, Entra, Defender and more.
+
+This is Libre DevOps Helpers.
 
 Subpackages, lowest layer first, in the style of the LibreDevOpsHelpers nested
 PowerShell modules:

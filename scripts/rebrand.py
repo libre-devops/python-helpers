@@ -37,7 +37,7 @@ SKIP_DIRS = {
     ".pytest_cache",
     ".ruff_cache",
 }
-TEXT_SUFFIXES = {".py", ".toml", ".md", ".yml", ".yaml", ".txt", ".cfg", ".ini", ""}
+TEXT_SUFFIXES = {".py", ".toml", ".md", ".yml", ".yaml", ".txt", ".cfg", ".ini", ".sh", ""}
 
 PACKAGE = re.compile(r"^[a-z][a-z0-9_]*$")
 DISTRIBUTION = re.compile(r"^[a-z][a-z0-9-]*[a-z0-9]$")
@@ -133,11 +133,13 @@ def rules(old: Brand, new: Brand) -> list[tuple[re.Pattern[str], str]]:
     if old.error_class != new.error_class:
         add(rf"\b{re.escape(old.error_class)}\b", new.error_class)
     if old.env_prefix != new.env_prefix:
-        add(rf"\b{re.escape(old.env_prefix)}_(?=[A-Z])", new.env_prefix + "_")
+        # LDO_CONFIG, and the prefix on its own (`LDO_`), but not a word that starts so.
+        add(rf"\b{re.escape(old.env_prefix)}_(?![a-z0-9])", new.env_prefix + "_")
         add(rf'ENV_PREFIX = "{re.escape(old.env_prefix)}"', f'ENV_PREFIX = "{new.env_prefix}"')
     if old.command != new.command:
-        # Case-sensitive and whole-word, so 'Ldo' in PowerShell names is left alone.
-        add(rf"(?<![\w-]){re.escape(old.command)}(?![\w-])", new.command)
+        # Case-sensitive and whole-word, so 'Ldo' in PowerShell names is left alone; the
+        # start of a hyphenated name counts (ldo-azure), a word ending in it does not.
+        add(rf"(?<![\w-]){re.escape(old.command)}(?![\w])", new.command)
     return [(re.compile(pattern), replacement) for pattern, replacement in pairs]
 
 
@@ -183,6 +185,9 @@ def rebrand(root: Path, old: Brand, new: Brand, *, dry_run: bool) -> list[tuple[
 
 
 BANNER_BLOCK = re.compile(r"(# banner-start\n)BANNER = r\"\"\".*?\"\"\"\n(# banner-end)", re.S)
+PICTURE_BLOCK = re.compile(
+    r"(# picture-start\n)BANNER_PICTURE = r\"\"\".*?\"\"\"\n(# picture-end)", re.S
+)
 
 
 def set_banner(root: Path, package: str, art: str) -> None:
@@ -202,11 +207,44 @@ def set_banner(root: Path, package: str, art: str) -> None:
     path.write_text(new, encoding="utf-8")
 
 
+def set_picture(root: Path, package: str, text: str) -> None:
+    """Set the picture drawn above the banner (see core/picture.py) to ``text``."""
+    if not text.isascii():
+        raise SystemExit("the picture must be plain ASCII: a palette, ---, then rows of letters")
+    if '"""' in text or "\n---\n" not in text:
+        raise SystemExit("the picture must be a palette, a line of ---, then rows of letters")
+    path = root / "src" / package / "core" / "brand.py"
+    source = path.read_text(encoding="utf-8")
+    body = "\n" + text.strip("\n") + "\n"
+    new, count = PICTURE_BLOCK.subn(
+        lambda match: f'{match.group(1)}BANNER_PICTURE = r"""{body}"""\n{match.group(2)}', source
+    )
+    if count != 1:
+        raise SystemExit(f"cannot find the picture block in {path}")
+    path.write_text(new, encoding="utf-8")
+
+
 def verify(root: Path) -> None:
     """Refresh the lock file and environment, then run the same checks as 'just check'."""
     for command in (
         ["uv", "lock"],
         ["uv", "sync"],
+        # A new name sorts elsewhere (a package before "fakes", an error class before
+        # "ConfigError"), so imports and __all__ are sorted again, and lines rewrapped.
+        [
+            "uv",
+            "run",
+            "ruff",
+            "check",
+            "--select",
+            "I,RUF022",
+            "--fix",
+            "--quiet",
+            "src",
+            "tests",
+            "scripts",
+        ],
+        ["uv", "run", "ruff", "format", "--quiet", "src", "tests", "scripts"],
         ["uv", "run", "ruff", "check", "src", "tests", "scripts"],
         ["uv", "run", "ruff", "format", "--check", "src", "tests", "scripts"],
         ["uv", "run", "mypy"],
@@ -232,6 +270,9 @@ def main(argv: list[str] | None = None) -> None:
     art = parser.add_mutually_exclusive_group()
     art.add_argument("--banner", type=Path, help="a file of ASCII art for the welcome banner")
     art.add_argument("--no-banner", action="store_true", help="ship without a banner")
+    parser.add_argument(
+        "--banner-picture", type=Path, help="a picture drawn above the banner, in colour"
+    )
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parent.parent)
     parser.add_argument("--dry-run", action="store_true", help="show what would change")
     parser.add_argument("--no-verify", action="store_true", help="skip the lock and checks")
@@ -243,8 +284,9 @@ def main(argv: list[str] | None = None) -> None:
     banner = (
         args.banner.read_text(encoding="utf-8") if args.banner else "" if args.no_banner else None
     )
-    if new == old and banner is None:
-        raise SystemExit("nothing to change: pass at least one new name, or a banner")
+    drawing = args.banner_picture.read_text(encoding="utf-8") if args.banner_picture else None
+    if new == old and banner is None and drawing is None:
+        raise SystemExit("nothing to change: pass at least one new name, a banner or a picture")
     for field in fields(Brand):
         before, after = getattr(old, field.name), getattr(new, field.name)
         if before != after:
@@ -257,6 +299,10 @@ def main(argv: list[str] | None = None) -> None:
         print("   banner: " + ("replaced" if banner.strip() else "removed"))
         if not args.dry_run:
             set_banner(root, new.package, banner)
+    if drawing is not None:
+        print("  picture: set")
+        if not args.dry_run:
+            set_picture(root, new.package, drawing)
     if not args.dry_run and not args.no_verify:
         verify(root)
 

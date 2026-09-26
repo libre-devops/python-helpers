@@ -3,6 +3,25 @@
 All notable changes to libre-devops-helpers are recorded here. The project follows
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- A picture in the welcome banner: `just rebrand --banner-picture FILE` draws a logo above
+  the banner's words in its own colours, two pixels to a character with half blocks, and
+  in plain ASCII where there is no colour. See [Rebranding](docs/rebranding.md).
+- Colours as `#RRGGBB` (and behind the text as well as in front) for anything the tool
+  styles: exact where the terminal shows 24-bit colour, else the nearest of the 256.
+
+### Fixed
+
+- `just rebrand` to a name that sorts elsewhere (one before `fakes`, an error class before
+  `ConfigError`) sorts the imports and `__all__` again, so its own checks pass; the prefix
+  on its own (`` `LDO_` ``) and hyphenated names (`ldo-azure`) are renamed too, and shell
+  scripts are rewritten with the rest. Two lines that a longer display name or prefix
+  pushed past the line length have room now.
+- `ldo logicapp validate` names its probe workflow after the command, not a fixed `ldo`.
+
 ## 0.6.0
 
 ### Added

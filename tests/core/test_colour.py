@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from libre_devops_helpers.core import colour, yaml_text
 
 
@@ -83,3 +85,43 @@ def test_the_rainbow_runs_in_diagonal_bands():
     assert first.count("\x1b[38;5;") == 2  # two bands of six
     assert first != second  # a later row starts further along the rainbow
     assert colour.diagonal("", 0) == ""
+
+
+def test_a_hex_colour_is_exact_where_the_terminal_shows_24_bit(monkeypatch):
+    monkeypatch.setenv("COLORTERM", "truecolor")
+    monkeypatch.delenv("WT_SESSION", raising=False)
+    assert colour.style("x", "#1E3A8A") == "\x1b[38;2;30;58;138mx\x1b[0m"
+    assert colour.style("x", "#1E3A8A", bg="#F97316") == (
+        "\x1b[38;2;30;58;138m\x1b[48;2;249;115;22mx\x1b[0m"
+    )
+
+
+@pytest.mark.parametrize(
+    ("environ", "shown"),
+    [
+        ({"COLORTERM": "24bit"}, True),
+        ({"WT_SESSION": "abc"}, True),
+        ({"COLORTERM": "yes"}, False),
+        ({}, False),
+    ],
+    ids=["24bit", "windows-terminal", "other", "nothing"],
+)
+def test_24_bit_colour_is_what_the_terminal_says(monkeypatch, environ, shown):
+    monkeypatch.delenv("COLORTERM", raising=False)
+    monkeypatch.delenv("WT_SESSION", raising=False)
+    for key, value in environ.items():
+        monkeypatch.setenv(key, value)
+    assert colour.truecolour() is shown
+
+
+def test_elsewhere_a_hex_colour_is_the_nearest_of_the_256(monkeypatch):
+    monkeypatch.delenv("COLORTERM", raising=False)
+    monkeypatch.delenv("WT_SESSION", raising=False)
+    assert colour.style("x", "#1E3A8A") == "\x1b[38;5;24mx\x1b[0m"
+    assert (colour.nearest("#F97316"), colour.nearest("#FFFFFF")) == (202, 231)
+    assert colour.nearest("#808080") == 244  # a grey is nearer the grey ramp than the cube
+
+
+def test_a_named_or_numbered_colour_can_go_behind_too():
+    assert colour.style("x", "white", bg="red") == "\x1b[37m\x1b[41mx\x1b[0m"
+    assert colour.style("x", bg=53) == "\x1b[48;5;53mx\x1b[0m"
