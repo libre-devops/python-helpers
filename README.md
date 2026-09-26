@@ -88,23 +88,44 @@ registries ([how](docs/development.md#gitlab-ci)).
 
 ## Quickstart
 
+Sign in with the Azure CLI, and `ldo` works as you at once, in the tenant and subscription
+`az` is using. Nothing else is needed.
+
 ```bash
-az login                        # the default sign-in is the Azure CLI's
-ldo config init                 # write ~/.config/ldo/config.toml
-$EDITOR "$(ldo config path)"    # put your tenant id in a profile
-ldo profiles                    # your profiles, and whether each can sign in
+az login
+ldo az whoami                                   # who ldo reads as, and where
+ldo devices check web01,web02                   # in Entra and onboarded to Defender?
+ldo xdr alerts --since 24h --severity high
 ```
 
-Then:
+A profile for each tenant or subscription you work in is optional: `ldo config init`, then
+see [Configuration](docs/configuration.md).
+
+### Checking a change from its plan
+
+Give it the plan: the workbook, the sheet, the column of names, and which rows to take. Here,
+the servers changing today, which should end up in two Entra groups:
 
 ```bash
-ldo devices check web01,web02                        # in Entra and onboarded to Defender?
-ldo devices check -f plan.xlsx --column FQDN --tag linux-servers
-ldo devices av-signature web01                       # Defender Antivirus versions
-ldo entra devices -f plan.xlsx --column FQDN --group "MDE Pilot Devices"
+ldo devices check -f plan.xlsx --sheet "Ring 1" --column FQDN --where "Scheduled Date=today" \
+  --group "Linux servers" --group "Linux pilot"
+ldo devices watch -f plan.xlsx --sheet "Ring 1" --column FQDN --where "Scheduled Date=today" \
+  --group "Linux servers" --group "Linux pilot" --interval 5m --timeout 4h
+```
+
+`check` looks once; `watch` looks again every `--interval` until every server meets every
+expectation, and exits 0 then, or 3 when `--timeout` comes first. Each row says how many
+checks the server meets (MET): `--sort met:desc` puts the complete ones first. `--where`
+takes a day (`25/09/2026`, `tomorrow`) or a span (`last 7d`,
+`2026-09-01..2026-09-14`); see [lists of names](docs/configuration.md#options-every-command-takes)
+and [check and watch](docs/devices.md#check-and-watch).
+
+More:
+
+```bash
+ldo devices av-signature -f plan.xlsx --column FQDN   # Defender Antivirus versions
+ldo entra devices -f plan.xlsx --column FQDN --group "Linux pilot"
 ldo azure automation logs aa-ops --runbook Rotate-Keys    # the newest run's logs
-ldo graph get-device web01
-ldo xdr alerts --since 24h --severity high
 ldo azure resource-graph "resources | summarize count() by type"
 ldo keyvault expiry kv-app-prd --within 30d
 ```
@@ -123,7 +144,7 @@ for those. [Permissions](docs/permissions.md) lists what each command needs.
 - [Container images](docs/containers.md)
 - [Using it as a library](docs/library.md) and [Rebranding](docs/rebranding.md) for your organisation
 - [Development](docs/development.md): `just` recipes, tests, CI and releasing
-- [AI.md](AI.md): the instructions for AI coding assistants (Claude Code, Copilot, Codex)
+- [AI.md](AI.md): the instructions for AI coding assistants (Claude Code, Copilot, Codex, Kiro)
 
 Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md), and
 [SECURITY.md](SECURITY.md) to report a vulnerability. Licensed under [MIT](LICENSE).

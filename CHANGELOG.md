@@ -3,6 +3,24 @@
 All notable changes to libre-devops-helpers are recorded here. The project follows
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- A MET column in `ldo devices check` and `watch`: how many of its checks each device meets,
+  `4/4` when complete, so `--sort met:desc` puts the complete devices first.
+
+### Changed
+
+- A warning from the library reads as the command's own do (`warning: ...`, in colour on a
+  terminal), without the time and the logger's name; `-v` shows them again.
+
+### Fixed
+
+- The warning about rows hidden or filtered out in Excel counts each name once, where a name
+  on several rows counted each time, says `--where` is the way to pick rows, and is not
+  given when `--where` picked them.
+
 ## 0.5.2
 
 ### Added

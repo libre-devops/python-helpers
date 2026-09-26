@@ -3,7 +3,9 @@ import logging
 
 import pytest
 
+from libre_devops_helpers.core import log
 from libre_devops_helpers.core.log import (
+    BriefFormatter,
     JsonFormatter,
     OtlpFormatter,
     normalise_format,
@@ -174,3 +176,31 @@ def test_a_correlation_id_is_kept_and_seeds_the_trace_when_it_is_a_guid():
 )
 def test_ids_are_normalised_or_refused(value, length, expected):
     assert otlp_hex_id(value, length) == expected
+
+
+def test_a_brief_record_reads_like_the_commands_own_warnings():
+    assert BriefFormatter().format(record()) == "warning: retrying in 1.5s"
+    coloured = BriefFormatter(coloured=True).format(record())
+    assert coloured == "\x1b[33mwarning: retrying in 1.5s\x1b[0m"
+
+
+def test_a_brief_record_keeps_its_traceback():
+    try:
+        raise ValueError("boom")
+    except ValueError:
+        import sys
+
+        text = BriefFormatter().format(record("failed", (), exc_info=sys.exc_info()))
+    assert text.startswith("warning: failed\nTraceback")
+    assert "ValueError: boom" in text
+
+
+@pytest.mark.parametrize(
+    ("verbosity", "kind"), [(0, BriefFormatter), (1, logging.Formatter)], ids=["quiet", "verbose"]
+)
+def test_text_logs_are_brief_unless_asked_for_more(monkeypatch, verbosity, kind):
+    seen = {}
+    monkeypatch.setattr(log.logging, "basicConfig", lambda **options: seen.update(options))
+    log.configure_logging(verbosity, "text")
+    (handler,) = seen["handlers"]
+    assert type(handler.formatter) is kind

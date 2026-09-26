@@ -24,7 +24,22 @@ ldo devices av-signature -f plan.xlsx --column FQDN --at-least 1.419.120.0
 8). `watch` repeats it every `--interval` until every device meets every expectation, or
 `--timeout` or `--max-passes` stops it; devices already complete are skipped unless you pass
 `--recheck`. Progress goes to stderr, the final table to stdout. Both exit 3 when a device
-falls short, and `watch` 130 on Ctrl-C.
+falls short, and `watch` 130 on Ctrl-C, after showing the last pass.
+
+The table has a row a device, in the order given: its name, MET (how many of its checks it
+meets, `4/4` when complete), then a column for each expectation, `ok` or what is missing.
+`--sort met:desc` puts the complete devices first and `--sort met` the ones to chase first;
+any other column sorts too (`--sort defender`). `-o csv` and `-o json` carry the same, for a
+spreadsheet or a script.
+
+```bash
+ldo devices watch -f plan.xlsx --column FQDN --where "Scheduled Date=today" \
+  --group "Linux servers" --interval 5m --timeout 4h --sort met:desc
+```
+
+To look on a schedule rather than in a terminal (from cron, or a pipeline's schedule), run
+`check`, which looks once: exit 3 says something is still short, and `-o csv` or `-o json`
+keeps the detail. The Azure CLI's sign-in must be current where it runs.
 
 | Expectation | Meaning |
 | --- | --- |

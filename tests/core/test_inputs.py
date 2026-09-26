@@ -150,12 +150,29 @@ def test_a_workbook_of_hidden_sheets_needs_a_sheet(tmp_path):
 def test_hidden_rows_are_included_with_a_warning(tmp_path, caplog):
     path = write_workbook(
         tmp_path / "plan.xlsx",
-        {"Plan": [["FQDN"], ["web01"], ["web02"], ["web03"]]},
-        hidden_rows={"Plan": {2, 3}},
+        {
+            "Plan": [
+                ["FQDN", "Day"],
+                ["web01", "Mon"],
+                ["web02", "Tue"],
+                ["web03", "Tue"],
+                ["WEB02", "Tue"],
+            ]
+        },
+        hidden_rows={"Plan": {2, 3, 4}},
     )
     with caplog.at_level(logging.WARNING):
         assert read_names(from_file=path, column="FQDN") == ["web01", "web02", "web03"]
-    assert "2 of the names in sheet 'Plan'" in caplog.text
+    # web02 twice over is one name, and --where is the way to pick rows.
+    assert "2 name(s) in sheet 'Plan'" in caplog.text
+    assert "pick them by value with --where" in caplog.text
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        assert read_names(from_file=path, column="FQDN", where=where("Day=Tue")) == [
+            "web02",
+            "web03",
+        ]
+    assert caplog.text == ""  # rows --where chose are meant, whatever Excel shows
 
 
 def test_sheet_applies_to_workbooks_only(tmp_path):

@@ -23,7 +23,7 @@ def test_devices_check_reads_names_from_a_csv_column(config_file, tenant, tmp_pa
         config_file, tenant, ["devices", "check", "-f", str(hosts), "--column", "fqdn", "-o", "csv"]
     )
     assert result.exit_code == 0, result.output
-    assert result.stdout.splitlines() == ["DEVICE,ENTRA,DEFENDER", "web01,ok,ok"]
+    assert result.stdout.splitlines() == ["DEVICE,MET,ENTRA,DEFENDER", "web01,2/2,ok,ok"]
 
 
 def test_devices_check_reads_names_from_an_excel_sheet(config_file, tenant, tmp_path):
@@ -37,17 +37,27 @@ def test_devices_check_reads_names_from_an_excel_sheet(config_file, tenant, tmp_
     command = ["devices", "check", "-f", str(plan), "--column", "FQDN", "-o", "csv"]
     result = invoke(config_file, tenant, [*command, "--sheet", "ring 1"])
     assert result.exit_code == 0, result.output
-    assert result.stdout.splitlines() == ["DEVICE,ENTRA,DEFENDER", "web01,ok,ok"]
+    assert result.stdout.splitlines() == ["DEVICE,MET,ENTRA,DEFENDER", "web01,2/2,ok,ok"]
     # Both sheets have the column, so without --sheet it asks which.
     result = invoke(config_file, tenant, command)
     assert isinstance(result.exception, InputError)
     assert result.exception.hint == "pick one with --sheet (Ring 1, Ring 2)"
 
 
+def test_the_complete_devices_sort_first_by_how_many_checks_they_meet(config_file, tenant):
+    args = ["devices", "check", "ghost,web01,phantom", "--sort", "met:desc", "-o", "csv"]
+    result = invoke(config_file, tenant, args)
+    assert result.exit_code == 3, result.output
+    rows = [line.split(",")[:2] for line in result.stdout.splitlines()[1:]]
+    assert rows == [["web01", "2/2"], ["ghost", "0/2"], ["phantom", "0/2"]]  # ties keep their order
+    plain = invoke(config_file, tenant, ["devices", "check", "ghost,web01", "-o", "csv"])
+    assert [line.split(",")[0] for line in plain.stdout.splitlines()[1:]] == ["ghost", "web01"]
+
+
 def test_devices_check_takes_a_defender_device_group(config_file, tenant):
     args = ["devices", "check", "web01", "--device-group", "Linux servers", "-o", "csv"]
     result = invoke(config_file, tenant, args)
-    assert result.stdout.splitlines()[0] == "DEVICE,ENTRA,DEFENDER,DEVICE GROUP LINUX SERVERS"
+    assert result.stdout.splitlines()[0] == "DEVICE,MET,ENTRA,DEFENDER,DEVICE GROUP LINUX SERVERS"
 
 
 def test_devices_watch_waits_on_the_fake_clock_until_complete(config_file, tenant):

@@ -167,17 +167,20 @@ def _column(
     if where:
         remaining = iter(_matching(list(remaining), header, source, where))
     values: list[str] = []
-    hidden = 0
+    hidden: set[str] = set()
     for cells, row_hidden in remaining:
         # Cells are kept whole, so a column may hold names with spaces in them.
         value = cells[index].strip() if index < len(cells) else ""
         if value:
             values.append(value)
-            hidden += row_hidden
-    if hidden:
+            if row_hidden:
+                hidden.add(value.casefold())
+    # Rows --where chose are meant, whatever Excel's own filter shows.
+    if hidden and not where:
         log.warning(
-            "%d of the names in %s are in rows hidden or filtered out in Excel; they are included",
-            hidden,
+            "%d name(s) in %s are in rows hidden or filtered out in Excel, and are included: "
+            "to read only some rows, pick them by value with --where",
+            len(hidden),
             source,
         )
     return values

@@ -283,7 +283,10 @@ def _render_run(run: CheckRun, expectations: Expectations, output: Output) -> No
     checks = expectations.checks
     rows: list[list[render.Cell]] = []
     for report in run.reports:
-        cells: list[render.Cell] = [report.name]
+        # How many checks it meets, so --sort met:desc puts the complete ones first.
+        met = sum(1 for outcome in report.outcomes if outcome.status == "met")
+        shown = f"{met}/{len(report.outcomes)}"
+        cells: list[render.Cell] = [report.name, (shown, "green" if report.complete else "yellow")]
         for check in checks:
             outcome = report.outcome(check)
             if outcome is None:
@@ -295,7 +298,7 @@ def _render_run(run: CheckRun, expectations: Expectations, output: Output) -> No
         rows.append(cells)
     render.emit(
         output,
-        ["DEVICE", *(check.upper() for check in checks)],
+        ["DEVICE", "MET", *(check.upper() for check in checks)],
         rows,
         {
             "complete": run.complete,

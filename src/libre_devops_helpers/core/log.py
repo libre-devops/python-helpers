@@ -25,11 +25,11 @@ import os
 import sys
 import traceback
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, ClassVar
 from urllib.parse import unquote
 
 from libre_devops_helpers import __version__
-from libre_devops_helpers.core import brand
+from libre_devops_helpers.core import brand, colour
 
 LOG_FORMATS = ("text", "json", "otlp")
 
@@ -55,6 +55,29 @@ _SEVERITY = {
     logging.ERROR: 17,
     logging.CRITICAL: 21,
 }
+
+
+class BriefFormatter(logging.Formatter):
+    """A record as the command's own messages read, ``warning: ...``, coloured when asked:
+    how a library warning looks without -v, where the time and the logger are noise."""
+
+    _COLOURS: ClassVar[dict[int, str]] = {
+        logging.WARNING: "yellow",
+        logging.ERROR: "red",
+        logging.CRITICAL: "red",
+    }
+
+    def __init__(self, *, coloured: bool = False) -> None:
+        super().__init__()
+        self.coloured = coloured
+
+    def format(self, record: logging.LogRecord) -> str:
+        """``level: message``, and the traceback when there is one."""
+        text = f"{record.levelname.lower()}: {record.getMessage()}"
+        if record.exc_info:
+            text += "\n" + self.formatException(record.exc_info)
+        shade = self._COLOURS.get(record.levelno)
+        return colour.style(text, shade) if self.coloured and shade else text
 
 
 class JsonFormatter(logging.Formatter):
@@ -241,10 +264,12 @@ def configure_logging(
         handler.setFormatter(JsonFormatter())
     elif fmt == "otlp":
         handler.setFormatter(OtlpFormatter())
-    else:
+    elif verbosity:
         handler.setFormatter(
             logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s", "%H:%M:%S")
         )
+    else:
+        handler.setFormatter(BriefFormatter(coloured=colour.wanted(sys.stderr)))
     logging.basicConfig(level=level, handlers=[handler], force=True)
     # urllib3 logs each connection at DEBUG; that is noise unless asked for twice over.
     logging.getLogger("urllib3").setLevel(logging.DEBUG if verbosity >= 3 else logging.WARNING)
