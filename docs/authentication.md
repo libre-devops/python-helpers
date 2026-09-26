@@ -41,7 +41,7 @@ permissions:
   id-token: write
   contents: read
 steps:
-  - run: uv tool install libre-devops-helpers==0.5.2
+  - run: uv tool install libre-devops-helpers==0.6.0
   - run: ldo --config .github/ldo.toml entra app-credentials -p ci --expiring 30d
 ```
 

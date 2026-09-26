@@ -15,12 +15,12 @@ locked in `container/azure-cli`, and no pip, so `az extension add` does not work
 
 | Tag (`-slim` for slim) | Moves? | Meaning |
 | --- | --- | --- |
-| `0.5.0` | to patched rebuilds | that release |
-| `0.5` | yes | the newest 0.5.x |
+| `0.6.0` | to patched rebuilds | that release |
+| `0.6` | yes | the newest 0.6.x |
 | `latest`, `slim` | yes | the newest release |
-| `0.5.0-20260928.57` | never | one build: its date and workflow run |
+| `0.6.0-20260928.57` | never | one build: its date and workflow run |
 
-Pin a stamped tag or a digest for a build that never changes, or `0.5` to take patches as
+Pin a stamped tag or a digest for a build that never changes, or `0.6` to take patches as
 they land. Each image carries a build provenance attestation and an SBOM:
 
 ```bash

@@ -20,4 +20,4 @@ Feature modules depend on ``core`` only; ``devices`` also uses ``entra``, ``xdr`
 caller's choice.
 """
 
-__version__ = "0.5.2"
+__version__ = "0.6.0"
