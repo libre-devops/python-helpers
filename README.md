@@ -76,7 +76,7 @@ uv tool upgrade libre-devops-helpers     # later, to the newest release
 
 Add the `keychain` extra (`"libre-devops-helpers[keychain]"`) to keep sign-ins in the macOS
 Keychain or the Linux Secret Service. A tagged release installs straight from GitHub too:
-`uv tool install git+https://github.com/libre-devops/python-helpers@v0.6.0`.
+`uv tool install git+https://github.com/libre-devops/python-helpers@v0.6.1`.
 
 Or run the container image, which has the Azure CLI inside:
 `podman run --rm -it ghcr.io/libre-devops/python-helpers:latest --help`
