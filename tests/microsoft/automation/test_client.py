@@ -1,6 +1,6 @@
 import pytest
 
-from fakes.automation import ACCOUNT_ID, FakeAutomation, account
+from fakes.automation import ACCOUNT_ID, FakeAutomation, account, job, stream
 from fakes.http import fake_session
 from fakes.ids import OTHER_SUBSCRIPTION, SUBSCRIPTION, TENANT
 from fakes.tokens import StaticTokens
@@ -110,6 +110,31 @@ def test_streams_come_oldest_first_and_one_can_be_read_in_full():
     for bad in ("s2/../x", "s2\n"):  # a trailing line break is not let through either
         with pytest.raises(InputError):
             automation.stream(aa, "job-3", bad)
+
+
+# As a schedule names its jobs: SCH_, the schedule's and runbook's GUIDs, and a timestamp.
+SCHEDULED = "_".join(
+    (
+        "SCH",
+        "11111111-2222-4333-8444-555555555555",
+        "66666666-7777-4888-9999-000000000000",
+        "639260167800000000",
+    )
+)
+
+
+def test_a_job_a_schedule_started_is_read_by_its_id():
+    fake = FakeAutomation()
+    fake.jobs.insert(0, job(SCHEDULED, "Rotate-Keys", "Completed", 0.5))
+    fake.streams[SCHEDULED] = [stream("s9", "Output", "Rotated 3 keys", "2026-09-24T11:00:10Z")]
+    fake.outputs[SCHEDULED] = "Rotated 3 keys\n"
+    automation = client(fake)
+    aa = automation.find_account(ACCOUNT_ID, [])
+    assert automation.jobs(aa)[0].id == SCHEDULED
+    assert [item.summary for item in automation.streams(aa, SCHEDULED)] == ["Rotated 3 keys"]
+    assert automation.output(aa, SCHEDULED) == "Rotated 3 keys\n"
+    with pytest.raises(InputError):
+        automation.streams(aa, "x" * 129)
 
 
 def test_output_is_the_jobs_text():

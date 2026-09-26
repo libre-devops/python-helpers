@@ -3,6 +3,14 @@
 All notable changes to libre-devops-helpers are recorded here. The project follows
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Fixed
+
+- `azure automation logs` and `output` refused a job a schedule started, whose id is
+  `SCH_`, two GUIDs and a timestamp joined by underscores, as "not a job id", even when
+  they picked the newest job themselves with `--runbook`.
+
 ## 0.6.3
 
 ### Fixed

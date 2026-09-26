@@ -23,7 +23,9 @@ PROVIDER = "Microsoft.Automation/automationAccounts"
 # What each part of a path may hold, so nothing typed can reach another resource.
 _ACCOUNT = re.compile(r"[A-Za-z0-9-]{1,50}")
 _GROUP = re.compile(r"[A-Za-z0-9._()-]{1,90}")
-_JOB = re.compile(r"[A-Za-z0-9-]{1,64}")
+# A job started by hand is a GUID; one a schedule started is SCH_, the schedule and runbook
+# GUIDs and a timestamp, joined by underscores (96 characters).
+_JOB = re.compile(r"[A-Za-z0-9_-]{1,128}")
 _STREAM = re.compile(r"[A-Za-z0-9:._-]{1,128}")
 
 
