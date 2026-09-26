@@ -70,6 +70,34 @@ just image-scan slim       # the vulnerability scan CI runs (needs trivy)
 `podman build .` and `docker build -f Containerfile .` work too. How the images are kept
 patched is in [Development](development.md#patching).
 
+### Behind a package proxy
+
+Where public base images can be pulled but packages only come through an index, such as a
+company's JFrog in front of PyPI, point the build at the index and give it the index's
+login, and the certificate bundle that trusts it, as build secrets:
+
+```bash
+podman build \
+  --build-arg PACKAGE_INDEX=https://jfrog.example/artifactory/api/pypi/pypi/simple \
+  --secret id=netrc,src=$HOME/.netrc \
+  --secret id=ca-bundle,src=/etc/ssl/certs/ca-certificates.crt \
+  --build-arg DEBIAN_UPGRADE=false \
+  .
+```
+
+| Build argument or secret | For | Default |
+| --- | --- | --- |
+| `PACKAGE_INDEX` | the index every Python package comes from | `https://pypi.org/simple` |
+| `netrc` (a secret) | a netrc file with the index's login (`machine HOST login USER password TOKEN`) | none: the index is read anonymously |
+| `ca-bundle` (a secret) | a PEM bundle for an index behind your organisation's own certificate authority. It replaces the public roots, so give the whole bundle, such as your machine's | the public roots |
+| `DEBIAN_UPGRADE` | `false` to leave out the Debian security updates, where Debian's mirrors cannot be reached | `true` |
+
+The packages are the versions `uv.lock` pins, each checked against the hash it holds,
+whichever index serves them. The login and the bundle are mounted only for the steps that
+install, and are never written into a layer or the image's history, as a build argument
+would be. Without the Debian updates the image has the base image's own packages, so keep
+the base image's digest current.
+
 ## Why the Azure CLI is not a Python dependency
 
 `azure-cli` is on PyPI, but it brings about 150 packages and 350 MB, many pinned exactly, and

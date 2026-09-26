@@ -3,6 +3,18 @@
 All notable changes to libre-devops-helpers are recorded here. The project follows
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- The container image builds behind a package proxy: `--build-arg PACKAGE_INDEX=URL` takes
+  every Python package from that index, each checked against `uv.lock`'s hash, with the
+  index's login as a build secret (`--secret id=netrc,src=FILE`) that never reaches a
+  layer, and a certificate bundle for an index behind your own authority
+  (`--secret id=ca-bundle,src=FILE`); `--build-arg DEBIAN_UPGRADE=false` leaves out the
+  Debian updates where the mirrors cannot be reached. See
+  [Container images](docs/containers.md#behind-a-package-proxy).
+
 ## 0.6.1
 
 ### Added

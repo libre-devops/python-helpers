@@ -25,3 +25,33 @@ def test_the_azure_cli_is_compiled_on_the_build_platform_and_shipped_compiled():
         "COPY --from=build-az /opt/az /opt/az"
         in text.split("AS compile-az", 1)[1].split("\nFROM", 1)[0]
     )
+
+
+def test_packages_install_from_the_index_by_the_locks_hashes_and_the_login_is_a_secret():
+    # Behind a package proxy the image builds from PACKAGE_INDEX, each package checked
+    # against uv.lock's hash; the index's login is a build secret, never a build argument,
+    # which the image's history would keep.
+    text = CONTAINERFILE.read_text()
+    assert "ARG PACKAGE_INDEX=https://pypi.org/simple" in text
+    assert "uv sync --locked" not in text
+    installs = [line for line in text.splitlines() if "uv pip install" in line]
+    assert len(installs) == 3
+    assert text.count("--require-hashes") == 2  # the project itself has no hash to check
+    assert text.count("--mount=type=secret,id=netrc,target=/root/.netrc") == 3
+    assert not re.search(r"ARG \w*(TOKEN|PASSWORD|NETRC|SECRET)", text, re.IGNORECASE)
+
+
+def test_an_index_behind_its_own_authority_is_trusted_through_a_bundle_for_the_build_alone():
+    # Every step that installs can be given the organisation's certificate bundle, as a
+    # secret so no layer keeps it, and uses it only when one was given.
+    text = CONTAINERFILE.read_text()
+    bundle = "/run/secrets/ca-bundle"
+    assert text.count(f"--mount=type=secret,id=ca-bundle,target={bundle}") == 3
+    assert text.count(f"if [ -s {bundle} ]; then export SSL_CERT_FILE={bundle}; fi") == 3
+    assert "ENV SSL_CERT_FILE" not in text
+
+
+def test_the_debian_upgrade_can_be_left_out_where_the_mirrors_cannot_be_reached():
+    text = CONTAINERFILE.read_text()
+    assert "ARG DEBIAN_UPGRADE=true" in text
+    assert 'if [ "$DEBIAN_UPGRADE" = true ]; then' in text
