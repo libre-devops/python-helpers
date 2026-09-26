@@ -19,7 +19,7 @@ import time
 from collections.abc import Callable, Iterator, Mapping
 from datetime import UTC, datetime
 from typing import Any, Self
-from urllib.parse import quote, urlencode, urlsplit
+from urllib.parse import SplitResult, quote, urlencode, urlsplit
 
 import requests
 
@@ -78,8 +78,7 @@ class ApiClient:
             raise ValueError("max_attempts must be at least 1")
         self.name = name
         self.base_url = base_url.rstrip("/")
-        self._scheme = parts.scheme
-        self._host = parts.netloc.lower()
+        self._origin = _origin(parts)
         self._token = token
         # "Bearer" for tokens; "Basic" when ``token`` returns base64 "user:password".
         self._auth_scheme = auth_scheme
@@ -128,11 +127,12 @@ class ApiClient:
         """Absolute URL for ``path`` with ``params`` percent-encoded.
 
         ``path`` may be a full URL (an ``@odata.nextLink``); it must use this client's
-        scheme and host, so a token never travels anywhere else.
+        scheme, host and port, so a token never travels anywhere else. The scheme's own port
+        is the same as none: Resource Manager's next links name ``:443``.
         """
         if "://" in path:
             parts = urlsplit(path)
-            if parts.scheme != self._scheme or parts.netloc.lower() != self._host:
+            if parts.username is not None or _origin(parts) != self._origin:
                 raise ApiError(
                     f"{self.name}: refusing to send a token to {parts.scheme}://{parts.netloc}"
                 )
@@ -419,6 +419,19 @@ def _hint(status: int, text: str) -> str | None:
         401: "the API rejected the token; check its audience, tenant and expiry",
         403: "the signed-in identity lacks a role or permission for this call",
     }.get(status)
+
+
+_DEFAULT_PORTS = {"https": 443, "http": 80}
+
+
+def _origin(parts: SplitResult) -> tuple[str, str, int | None]:
+    """A URL's scheme, host (lower case) and port, the scheme's own port when it names
+    none, so ``https://host:443`` and ``https://host`` are the same place."""
+    try:
+        port = parts.port
+    except ValueError:
+        port = -1  # a port that cannot be read matches no client's
+    return parts.scheme, (parts.hostname or "").lower(), port or _DEFAULT_PORTS.get(parts.scheme)
 
 
 def _is_local(host: str) -> bool:

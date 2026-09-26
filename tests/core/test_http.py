@@ -118,6 +118,34 @@ def test_a_next_link_to_another_host_is_refused():
     assert len(adapter.requests) == 1
 
 
+def test_a_next_link_that_names_the_default_port_is_followed():
+    # Resource Manager's next links name :443, which is where https goes anyway.
+    def handler(request):
+        if "page=2" in request.url:
+            return (200, {"value": [{"id": "b"}]})
+        link = "https://GRAPH.microsoft.com:443/v1.0/devices?page=2"
+        return (200, {"value": [{"id": "a"}], "@odata.nextLink": link})
+
+    api, _, _ = client(handler)
+    assert [item["id"] for item in api.get_all("/v1.0/devices")] == ["a", "b"]
+
+
+@pytest.mark.parametrize(
+    "link",
+    [
+        "https://graph.microsoft.com:8443/v1.0/devices",
+        "http://graph.microsoft.com/v1.0/devices",
+        "https://graph.microsoft.com@evil.test/v1.0/devices",
+        "https://graph.microsoft.com:notaport/v1.0/devices",
+    ],
+    ids=["other-port", "plain-http", "userinfo", "bad-port"],
+)
+def test_a_next_link_to_another_port_scheme_or_disguised_host_is_refused(link):
+    api, _, _ = client(lambda request: (200, {}))
+    with pytest.raises(ApiError, match="refusing to send a token"):
+        api.url(link)
+
+
 def test_base_url_must_be_https():
     with pytest.raises(ValueError, match="https"):
         ApiClient("http://graph.microsoft.com", lambda: "tok")

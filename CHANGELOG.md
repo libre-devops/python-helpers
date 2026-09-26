@@ -3,6 +3,17 @@
 All notable changes to libre-devops-helpers are recorded here. The project follows
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Fixed
+
+- `azure automation jobs`, `logs` and `output` stopped at the second page of a busy
+  account's jobs, or of a long job's logs, with "refusing to send a token to
+  https://management.azure.com:443": Resource Manager's next links name the port HTTPS
+  uses anyway. A next link now has to match the service's scheme, host and port, the
+  default port being the same as none, and one with a user name before its host is
+  refused.
+
 ## 0.6.2
 
 ### Added
