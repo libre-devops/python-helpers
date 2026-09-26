@@ -3,7 +3,7 @@
 All notable changes to libre-devops-helpers are recorded here. The project follows
 [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 0.6.4
 
 ### Fixed
 
