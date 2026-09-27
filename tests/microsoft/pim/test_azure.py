@@ -25,7 +25,7 @@ def arm_instance(role: str, *, assignment_type: str = "", ends: str | None = Non
             "expandedProperties": {
                 "principal": {"displayName": "Ana"},
                 "roleDefinition": {"displayName": role},
-                "scope": {"displayName": "libre-devops-dev"},
+                "scope": {"displayName": "sub-platform-dev"},
             },
         },
     }
@@ -42,7 +42,7 @@ def test_my_azure_eligibility_is_asked_once_at_the_root_as_target():
     )
     found = client.eligible()
     assert [(item.role, item.scope, item.member_type) for item in found] == [
-        ("Owner", "libre-devops-dev", "Group")
+        ("Owner", "sub-platform-dev", "Group")
     ]
     request = adapter.requests[0]
     assert (

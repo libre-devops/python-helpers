@@ -28,6 +28,9 @@ from libre_devops_helpers.core import brand, network
 from libre_devops_helpers.core.errors import ApiError
 
 log = logging.getLogger(__name__)
+# A retry's jitter need not be unpredictable, but the system's random source costs nothing
+# here, and is the one a security scanner expects wherever random numbers are drawn.
+_JITTER = random.SystemRandom()
 
 RETRY_STATUSES = frozenset({408, 429, 500, 502, 503, 504})
 USER_AGENT = f"{brand.COMMAND}/{__version__}"
@@ -295,8 +298,8 @@ class ApiClient:
             delay = min(self._max_retry_after, retry_after)
         else:
             delay = min(self._max_backoff, self._backoff * 2 ** (attempt - 1))
-            # Jitter, so clients that failed together do not retry together; not secret.
-            delay += random.uniform(0, self._backoff / 2)  # noqa: S311
+            # Jitter, so clients that failed together do not retry together.
+            delay += _JITTER.uniform(0, self._backoff / 2)
         log.warning(
             "%s: %s on attempt %d of %d, retrying in %.1fs",
             self.name,

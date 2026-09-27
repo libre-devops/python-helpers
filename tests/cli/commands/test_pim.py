@@ -74,7 +74,7 @@ def arm_item(role: str, ends: str | None, assignment_type: str = "", status: str
             "endDateTime": ends,
             "expandedProperties": {
                 "roleDefinition": {"displayName": role},
-                "scope": {"displayName": "libre-devops-dev"},
+                "scope": {"displayName": "sub-platform-dev"},
             },
         },
     }
@@ -186,7 +186,7 @@ def test_permanent_only_shows_standing_access(tmp_path, tenant):
     assert result.exit_code == 0, result.output
     header, *rows = result.stdout.splitlines()
     assert header == "AREA,ROLE,SCOPE,MEMBERSHIP,TYPE,FROM,UNTIL"
-    assert rows == ["azure,Reader,libre-devops-dev,Direct,Assigned,-,permanent"]
+    assert rows == ["azure,Reader,sub-platform-dev,Direct,Assigned,-,permanent"]
 
 
 def test_a_named_user_is_resolved_then_searched_per_subscription(tmp_path, tenant):

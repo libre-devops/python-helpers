@@ -132,8 +132,10 @@ def _xml(data: bytes, source: str) -> ElementTree.Element:
     if _declares_a_type(data):
         raise InputError(f"{source}: refusing XML that declares a document type")
     try:
-        # S314 would have defusedxml, a dependency this does not need: with no document
-        # type, no entity can be declared to expand, and ElementTree fetches nothing.
+        # S314 (bandit's B314) would have defusedxml, a dependency this does not need: with
+        # no document type, no entity can be declared to expand, and ElementTree fetches
+        # nothing. A false positive, then, said so to ruff and to Semgrep (GitLab's SAST).
+        # nosemgrep: bandit.B314
         return ElementTree.fromstring(data)  # noqa: S314
     except ElementTree.ParseError as exc:
         raise InputError(f"{source}: cannot be read as XML ({exc})") from None

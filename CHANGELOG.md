@@ -3,6 +3,19 @@
 All notable changes to libre-devops-helpers are recorded here. The project follows
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Changed
+
+- The Message Center and Planner page shows how to register the app their delegated Graph
+  scopes need (`ServiceMessage.Read.All`, `Tasks.ReadWrite`), and the profile to sign in with.
+
+### Fixed
+
+- GitLab's SAST (Semgrep) has nothing to report: a retry's jitter comes from the system's
+  random source, and reading an analyzer result's XML, which refuses a document type first,
+  is marked a false positive for it as it is for ruff.
+
 ## 0.8.0
 
 ### Added

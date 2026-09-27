@@ -26,9 +26,48 @@ ldo planner add-rollup "SOC changes" --bucket "To be discussed" --date 2026-06-0
 
 ## Signing in
 
-Message Center needs `ServiceMessage.Read.All`, and raising tasks `Tasks.ReadWrite`, which
-the Azure CLI's token has neither of. Add them to [your own app
-registration](authentication.md#your-own-app-registration), and pass its profile with `-p`.
+Message Center needs Microsoft Graph's `ServiceMessage.Read.All`, and raising tasks
+`Tasks.ReadWrite`. Both are delegated scopes: they act as you, so `ldo` reads only what you
+may, and raises tasks only in plans you are a member of. The Azure CLI's token has neither,
+so register an app of your own for them, once per tenant, and have an administrator
+consent to it:
+
+```bash
+app=$(az ad app create --display-name "ldo (Message Center and Planner)" \
+  --public-client-redirect-uris http://localhost --is-fallback-public-client true \
+  --query appId -o tsv)
+graph=00000003-0000-0000-c000-000000000000       # Microsoft Graph
+for scope in ServiceMessage.Read.All Tasks.ReadWrite; do
+  id=$(az ad sp show --id $graph --query "oauth2PermissionScopes[?value=='$scope'].id" -o tsv)
+  az ad app permission add --id "$app" --api $graph --api-permissions "$id=Scope"
+done
+az ad app permission admin-consent --id "$app"   # or an administrator, in Enterprise applications
+echo "client_id = \"$app\""
+```
+
+Then add a profile that signs in with it to the config file (`ldo config path` says where
+that is):
+
+```toml
+[microsoft.profiles.me]
+tenant_id = "<tenant guid>"
+auth = "device-code"            # or "interactive", which opens a browser
+client_id = "<the app id printed above>"
+```
+
+and pass it with `-p`:
+
+```bash
+ldo news messages --security -p me
+ldo planner add-news "SOC changes" --bucket "To be discussed" --security -p me
+```
+
+The first command signs you in (with `device-code`, a code to enter at
+microsoft.com/devicelogin) and keeps the sign-in, so the next ones do not ask again: see
+[keeping a sign-in](authentication.md#keeping-a-sign-in). The same app can carry the scopes
+PIM, incidents and hunting need as well: [your own app
+registration](authentication.md#your-own-app-registration) lists them all.
+
 Reading plans and tasks works with the Azure CLI's sign-in too (its `Group.ReadWrite.All`
 covers group plans). Planner needs a licence that includes it: without one, Graph answers
 that the tenant has it disabled. Graph covers basic plans, not premium ones.
