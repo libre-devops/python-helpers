@@ -329,30 +329,14 @@ def error_from_response(
 ) -> ApiError:
     """Build an ApiError from a failed response, using the service's error body when present.
 
-    Graph, Defender, ARM and Key Vault reply ``{"error": {"code", "message"}}``; the Entra
-    token endpoint replies ``{"error": "<code>", "error_description": "..."}``. ``hints``
-    gives the hint for an error code the API is known to give, before the general ones.
+    ``hints`` gives the hint for an error code the API is known to give, or for a status
+    (``"HTTP 401"``) when its errors carry no code, before the general ones.
     """
-    code: str | None = None
-    message: str | None = None
-    request_id: str | None = None
     try:
         body = response.json()
     except ValueError:
         body = None
-    if isinstance(body, dict) and isinstance(body.get("error"), dict):
-        error = body["error"]
-        code = error.get("code") if isinstance(error.get("code"), str) else None
-        message = error.get("message") if isinstance(error.get("message"), str) else None
-        inner = error.get("innerError")
-        if isinstance(inner, dict) and isinstance(inner.get("request-id"), str):
-            request_id = inner["request-id"]
-    elif isinstance(body, dict) and isinstance(body.get("error"), str):
-        code = body["error"]
-        description = body.get("error_description")
-        if isinstance(description, str) and description.strip():
-            # The first line carries the AADSTS code and the reason; the rest is trace ids.
-            message = description.strip().splitlines()[0]
+    code, message, request_id = _error_fields(body)
     request_id = (
         request_id or response.headers.get("request-id") or response.headers.get("x-ms-request-id")
     )
@@ -373,8 +357,46 @@ def error_from_response(
             "Access policy (a claims challenge); sign in again"
         )
     else:
-        hint = (hints or {}).get(code or "") or _hint(status, text.lower())
+        known = hints or {}
+        hint = (known.get(code) if code else None) or known.get(f"HTTP {status}")
+        hint = hint or _hint(status, text.lower())
     return ApiError(text, status=status, code=code, request_id=request_id, hint=hint)
+
+
+def _error_fields(body: object) -> tuple[str | None, str | None, str | None]:
+    """(code, message, request id) from an error body, in the shapes services send.
+
+    Graph, Defender, ARM and Key Vault send ``{"error": {"code", "message"}}``; the Entra
+    token endpoint ``{"error": "<code>", "error_description": "..."}``; Jira
+    ``{"errorMessages": [...]}``, and Confluence ``{"errors": [{"title", "detail"}]}``.
+    """
+    if not isinstance(body, dict):
+        return None, None, None
+    error = body.get("error")
+    if isinstance(error, dict):
+        code = error.get("code") if isinstance(error.get("code"), str) else None
+        message = error.get("message") if isinstance(error.get("message"), str) else None
+        inner = error.get("innerError")
+        found = inner.get("request-id") if isinstance(inner, dict) else None
+        return code, message, found if isinstance(found, str) else None
+    if isinstance(error, str):
+        description = body.get("error_description")
+        # The first line carries the AADSTS code and the reason; the rest is trace ids.
+        text = description.strip().splitlines()[0] if isinstance(description, str) else ""
+        return error, text or None, None
+    return None, _atlassian_message(body), None
+
+
+def _atlassian_message(body: Mapping[str, Any]) -> str | None:
+    messages = body.get("errorMessages")
+    if isinstance(messages, list) and messages and isinstance(messages[0], str):
+        return "; ".join(str(message) for message in messages)
+    errors = body.get("errors")
+    if isinstance(errors, list) and errors and isinstance(errors[0], dict):
+        first = errors[0]
+        parts = [first.get("title"), first.get("detail")]
+        return ": ".join(str(part) for part in parts if isinstance(part, str) and part) or None
+    return None
 
 
 def _readable(message: str) -> str:

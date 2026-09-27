@@ -5,6 +5,7 @@ from typing import Annotated
 
 import typer
 
+from libre_devops_helpers.atlassian.config import CONFIG_TEMPLATE as ATLASSIAN_TEMPLATE
 from libre_devops_helpers.cli import render
 from libre_devops_helpers.cli.options import get_runtime
 from libre_devops_helpers.core import brand
@@ -14,7 +15,7 @@ from libre_devops_helpers.microsoft.config import CONFIG_TEMPLATE as MICROSOFT_T
 from libre_devops_helpers.servicenow.config import CONFIG_TEMPLATE as SERVICENOW_TEMPLATE
 
 # The file 'config init' writes: shared settings, then each vendor's section.
-TEMPLATE = "\n".join([CONFIG_HEADER, MICROSOFT_TEMPLATE, SERVICENOW_TEMPLATE])
+TEMPLATE = "\n".join([CONFIG_HEADER, MICROSOFT_TEMPLATE, SERVICENOW_TEMPLATE, ATLASSIAN_TEMPLATE])
 
 config_app = typer.Typer(
     rich_markup_mode="markdown", help="Create or locate the config file.", no_args_is_help=True

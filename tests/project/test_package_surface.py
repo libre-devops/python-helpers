@@ -21,6 +21,7 @@ NAME = package.__name__
 
 VENDORS = {
     "microsoft": [
+        "analyzer",
         "azcli",
         "automation",
         "entra",
@@ -33,12 +34,15 @@ VENDORS = {
         "keyvault",
         "loganalytics",
         "logicapps",
+        "news",
         "pim",
+        "planner",
     ],
     "servicenow": ["instance"],
+    "atlassian": ["jira", "confluence"],
 }
 
-SHARED = {"microsoft": ["auth"], "servicenow": []}
+SHARED = {"microsoft": ["auth"], "servicenow": [], "atlassian": []}
 
 COMPOSITES = {"microsoft.devices": {"microsoft.entra", "microsoft.xdr", "microsoft.intune"}}
 

@@ -3,6 +3,42 @@
 All notable changes to libre-devops-helpers are recorded here. The project follows
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- `xdr analyzer` reads MDE Client Analyzer results, one or many: the zip the analyzer
+  writes on Windows, or the support tool's on Linux and macOS, the folder it unpacks to,
+  or the results XML. Each device's findings come errors first, with `--severity` to keep
+  the worst, `--guidance` for what to do, and `--facts` for its OS, versions and services.
+  Nothing is sent anywhere or unpacked to disk. See
+  [MDE Client Analyzer results](docs/defender.md#mde-client-analyzer-results).
+- `-o html` writes any data command's table as a styled page that stands alone: the
+  command, counts of what is ok, needs attention or failed, the command's notes, and a
+  table that sorts, filters and copies as CSV, in light or dark. In a terminal it is
+  written to a file here and opened in the browser; redirected, to stdout. Nothing is
+  fetched, and it is loaded only when asked for. See
+  [HTML reports](docs/configuration.md#html-reports).
+- `jira` and `confluence` read Atlassian Cloud as your own account, with an API token
+  (`JIRA_INSTANCE`, `JIRA_EMAIL` and `JIRA_TOKEN`, or `[atlassian]` profiles): Jira issues
+  by JQL or project, one issue with its description as Markdown, and projects; Confluence
+  spaces, pages, one page as Markdown, and CQL search. See
+  [Jira and Confluence](docs/atlassian.md).
+- `news` reads the Microsoft 365 Message Center: posts by change date (`--date today`,
+  `29/09/2026`, a span, `last 7d`, or `--since 7d`), by part of a service's name
+  (`--service xdr`), the security services at once (`--security`), category and major
+  change, and one post with its text as Markdown. It needs `ServiceMessage.Read.All`, so
+  your own app registration.
+- `planner` reads Planner plans, buckets and tasks, and `planner add-news PLAN --bucket NAME`
+  raises a task for each Message Center post the plan has none for yet (by the post's id at
+  the start of a task's title), with its link and text. It only says which without
+  `--write`, the one change it makes. See [Message Center and Planner](docs/message-center.md).
+
+### Fixed
+
+- A Graph service that is not on in the tenant (`TenantDisabled`, as Planner answers
+  without a licence that includes it) says so, rather than blaming a missing permission.
+
 ## 0.6.4
 
 ### Fixed

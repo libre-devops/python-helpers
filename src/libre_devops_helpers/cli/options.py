@@ -103,13 +103,37 @@ ProfileOption = Annotated[
     ),
 ]
 
+
+def _complete_atlassian_profile(incomplete: str) -> list[str]:
+    """Shell completion for ``--profile`` on Jira and Confluence commands."""
+    from libre_devops_helpers.cli.runtime import Runtime
+
+    try:
+        names = [profile.name for profile in Runtime().atlassian.profiles()]
+    except LdoError:
+        return []
+    return [name for name in sorted(names) if name.startswith(incomplete)]
+
+
+AtlassianProfileOption = Annotated[
+    str | None,
+    typer.Option(
+        "--profile",
+        "-p",
+        envvar=brand.env_var("ATLASSIAN_PROFILE"),
+        help="Atlassian profile. Default: default_profile, else the one from the environment.",
+        autocompletion=_complete_atlassian_profile,
+        show_default=False,
+    ),
+]
+
 OutputOption = Annotated[
     Output,
     typer.Option(
         "--output",
         "-o",
         help="table for people, json for scripts, csv for spreadsheets, tsv for shell "
-        "pipelines (no header, as az -o tsv).",
+        "pipelines (no header, as az -o tsv), html for a page to open or share.",
     ),
 ]
 

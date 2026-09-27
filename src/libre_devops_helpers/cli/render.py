@@ -10,6 +10,7 @@ output is not a terminal, so piped output stays plain.
 
 from __future__ import annotations
 
+import contextlib
 import csv
 import io
 import json
@@ -22,7 +23,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import asdict
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, ClassVar
 
 import typer
 
@@ -44,6 +45,7 @@ class Output(StrEnum):
     JSON = "json"
     CSV = "csv"
     TSV = "tsv"
+    HTML = "html"
 
 
 _CHECK_COLOURS = {"pass": "green", "warn": "yellow", "fail": "red"}
@@ -87,8 +89,63 @@ def structured_output(enabled: bool) -> None:
     _Mode.structured = enabled
 
 
+class _Report:
+    """What ``-o html`` has gathered so far: every table the command wrote, and the notes
+    and warnings around them, to write as one page when the command finishes."""
+
+    tables: ClassVar[list[tuple[list[str], list[list[Cell]]]]] = []
+    notes: ClassVar[list[tuple[str, str]]] = []
+    # The command's name and whole command line, when the console entry point knows them.
+    heading = ""
+    command = ""
+
+
+def begin_report(*, command: str = "", heading: str = "") -> None:
+    """Start a command afresh, with nothing gathered for a page yet; the console entry
+    point also gives the command line, and the command's name."""
+    _Report.tables, _Report.notes = [], []
+    if command:
+        _Report.command, _Report.heading = command, heading
+
+
+def finish_report() -> None:
+    """Write the page ``-o html`` gathered, if it gathered anything: to stdout when that is
+    a pipe or a file, else to a file here, which it opens in the browser."""
+    if not _Report.tables:
+        return
+    from libre_devops_helpers.cli import html  # only -o html pays for loading it
+
+    page = html.page(
+        heading=_Report.heading or brand.COMMAND,
+        command=_Report.command or f"{brand.COMMAND} {_Report.heading}".strip(),
+        tables=[html.Table(headers, rows) for headers, rows in _Report.tables],
+        notes=list(_Report.notes),
+        generated=datetime.now(UTC),
+    )
+    _Report.tables = []
+    if not sys.stdout.isatty():
+        typer.echo(page, nl=False)
+        return
+    name = re.sub(r"[^a-z0-9]+", "-", f"{brand.COMMAND} {_Report.heading}".lower()).strip("-")
+    path = os.path.abspath(f"{name}-{datetime.now(UTC):%Y%m%d-%H%M%S}.html")
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(page)
+    note(f"wrote {path}")
+    _open_in_browser(path)
+
+
+def _open_in_browser(path: str) -> None:
+    import webbrowser
+    from pathlib import Path
+
+    # No browser here (a server, a container): the path is noted, which is enough.
+    with contextlib.suppress(webbrowser.Error):
+        webbrowser.open(Path(path).as_uri())
+
+
 def note(text: str) -> None:
     """A dim informational line on stderr (an INFO record in a structured log format)."""
+    _Report.notes.append(("note", text))
     if _Mode.structured:
         _log.info(text)
         return
@@ -97,6 +154,7 @@ def note(text: str) -> None:
 
 def warn(text: str) -> None:
     """A warning on stderr (a WARNING record in a structured log format)."""
+    _Report.notes.append(("warning", text))
     if _Mode.structured:
         _log.warning(text)
         return
@@ -208,12 +266,20 @@ def emit(
         print_json(records)
         return
     rows = arranged(headers, rows)
-    if output is Output.CSV:
+    if output is Output.HTML:
+        _gather(headers, rows)
+    elif output is Output.CSV:
         typer.echo(csv_text(headers, rows), nl=False)
     elif output is Output.TSV:
         typer.echo(tsv_text(rows), nl=False)
     else:
         typer.echo(table(headers, rows))
+
+
+def _gather(headers: Sequence[str], rows: Iterable[Sequence[Cell]]) -> None:
+    # The page is written when the command finishes, so that notes after the table
+    # (its summary, most often) are on it too.
+    _Report.tables.append((list(headers), [list(row) for row in rows]))
 
 
 def arranged(headers: Sequence[str], rows: Iterable[Sequence[Cell]]) -> Iterable[Sequence[Cell]]:

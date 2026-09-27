@@ -107,7 +107,8 @@ arm=797f4846-ba00-4fd7-ba43-dac1f8f63013         # Azure Service Management
 for scope in Directory.Read.All RoleEligibilitySchedule.Read.Directory \
   RoleAssignmentSchedule.ReadWrite.Directory RoleManagementPolicy.Read.Directory \
   PrivilegedEligibilitySchedule.Read.AzureADGroup PrivilegedAssignmentSchedule.ReadWrite.AzureADGroup \
-  RoleManagementPolicy.Read.AzureADGroup SecurityIncident.Read.All ThreatHunting.Read.All; do
+  RoleManagementPolicy.Read.AzureADGroup SecurityIncident.Read.All ThreatHunting.Read.All \
+  ServiceMessage.Read.All Tasks.ReadWrite; do
   id=$(az ad sp show --id $graph --query "oauth2PermissionScopes[?value=='$scope'].id" -o tsv)
   az ad app permission add --id "$app" --api $graph --api-permissions "$id=Scope"
 done

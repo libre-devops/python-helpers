@@ -249,3 +249,56 @@ def test_a_moment_is_local_time_to_the_second_or_utc_where_it_cannot_be():
     assert render.moment(at) == f"{at.astimezone():%Y-%m-%d %H:%M:%S}"
     old = Unconvertible(1969, 12, 31, 23, 0, 5, tzinfo=UTC)
     assert render.moment(old) == "1969-12-31 23:00:05 UTC"
+
+
+def test_html_gathers_every_table_and_the_notes_and_writes_one_page_at_the_end(capsys):
+    render.begin_report(command="ldo devices check web01", heading="devices check")
+    render.note("before the table")
+    render.emit(Output.HTML, ["DEVICE", "STATE"], [["web01", ("ok", "green")]], None)
+    render.warn("after it")
+    assert capsys.readouterr().out == ""  # nothing is written until the command is done
+    render.finish_report()
+    page = capsys.readouterr().out
+    assert page.startswith("<!doctype html>")
+    assert "<h1>devices check</h1>" in page
+    assert "<code>ldo devices check web01</code>" in page
+    assert '<p class="note">before the table</p>' in page
+    assert '<p class="warning">after it</p>' in page
+    render.finish_report()
+    assert capsys.readouterr().out == ""  # written once
+
+
+def test_html_on_a_terminal_is_a_file_here_opened_in_the_browser(monkeypatch, tmp_path, capsys):
+    opened = []
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+    monkeypatch.setattr("webbrowser.open", opened.append)
+    render.begin_report(command="ldo xdr analyzer r.zip", heading="xdr analyzer")
+    render.emit(Output.HTML, ["HOST"], [["web01"]], None)
+    render.finish_report()
+    (written,) = tmp_path.glob("ldo-xdr-analyzer-*.html")
+    assert "<td>web01</td>" in written.read_text(encoding="utf-8")
+    assert opened == [written.as_uri()]
+    assert f"wrote {written}" in capsys.readouterr().err
+
+
+def test_html_with_no_browser_to_open_still_says_where_the_page_is(monkeypatch, tmp_path, capsys):
+    import webbrowser
+
+    def refuse(url):
+        raise webbrowser.Error("no browser")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+    monkeypatch.setattr("webbrowser.open", refuse)
+    render.begin_report()
+    render.emit(Output.HTML, ["HOST"], [["web01"]], None)
+    render.finish_report()
+    assert "wrote " in capsys.readouterr().err
+
+
+def test_a_command_that_wrote_no_table_writes_no_page(capsys):
+    render.begin_report()
+    render.note("nothing to show")
+    render.finish_report()
+    assert capsys.readouterr().out == ""

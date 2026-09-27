@@ -19,6 +19,11 @@ Microsoft and covers most of `ldo`, but not all of it:
 | `xdr detections ...` | Graph (beta) | `CustomDetection.Read.All`, and a Defender XDR role | only when an admin consents it for the Azure CLI's app |
 | `graph get ...` | Graph | whatever the path reads | directory, users, groups, devices, apps: yes |
 | `azure ...`, `azure automation ...`, `logicapp export` | ARM | Reader | yes |
+| `news ...` | Graph | `ServiceMessage.Read.All` | no |
+| `planner plans`, `buckets`, `tasks` | Graph | `Tasks.Read`, or `Group.Read.All` for group plans | yes, for group plans |
+| `planner add-news --write` | Graph | `Tasks.ReadWrite` (and `ServiceMessage.Read.All`) | no |
+| `jira ...`, `confluence ...` | Atlassian | an API token, reading what its account may in Jira's and Confluence's own permissions | yes |
+| `xdr analyzer`, `logicapp check`, `diff`, `params` and the others that read files | none: local files | nothing | yes |
 | `logicapp validate` | ARM | `Microsoft.Logic/locations/workflows/validate/action` (Logic App Contributor) | yes |
 | `keyvault expiry` | Key Vault | Key Vault Reader, and a firewall that lets you in | yes |
 | `logs query` | Log Analytics | Log Analytics Reader | yes |

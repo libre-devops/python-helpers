@@ -157,3 +157,30 @@ Rules need `CustomDetection.Read.All` on the Graph token. The Azure CLI cannot a
 use a profile with [your own app registration](authentication.md#your-own-app-registration),
 or have an admin consent the delegated permission for the Azure CLI's own app
 (`04b07795-8ddb-461a-bbee-02f9e1bf7b46`).
+
+## MDE Client Analyzer results
+
+Microsoft's [MDE Client Analyzer](https://learn.microsoft.com/defender-endpoint/overview-client-analyzer)
+checks one device's Defender for Endpoint (connectivity, services, configuration, versions)
+and zips what it finds with everything it collected. `xdr analyzer` reads those zips, one or
+many, and lists each device's findings, errors first:
+
+```bash
+ldo xdr analyzer MDEClientAnalyzerResult.zip                 # one device's findings
+ldo xdr analyzer results/*.zip --severity warning            # many: only warnings and errors
+ldo xdr analyzer MDEClientAnalyzerResult.zip --guidance      # with what to do about each
+ldo xdr analyzer MDEClientAnalyzerResult.zip --facts         # its OS, versions and services
+ldo xdr analyzer results/*.zip -o json > analyzer.json       # every result in full
+```
+
+It takes the zip itself, the folder it unpacks to, or the results XML, from:
+
+- **Windows**, `MDEClientAnalyzer.cmd`: it reads `SystemInfoLogs\MDEClientAnalyzer.xml`,
+  whose findings carry their own severity, check, result and guidance.
+- **Linux and macOS**, the support tool (`mde_support_tool.sh` or its compiled
+  `MDESupportTool`): it reads `mde.xml`. Those findings are ids alone, so `ldo` says what
+  each means, or uses the tool's own `events.xml` where the zip carries it.
+
+Everything is read here: nothing is sent anywhere, and nothing in the zip is unpacked to
+disk (only the results file is read, up to 16 MB). Exits 3 when a device has an error or a
+warning.

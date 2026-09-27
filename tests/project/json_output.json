@@ -144,6 +144,50 @@
       "tenantId": "string"
     }
   ],
+  "confluence page": {
+    "body": "string",
+    "id": "string",
+    "space": "null",
+    "space_id": "string",
+    "status": "string",
+    "title": "string",
+    "updated": "string",
+    "url": "string",
+    "version": "number"
+  },
+  "confluence pages": [
+    {
+      "id": "string",
+      "space": "string",
+      "space_id": "string",
+      "status": "string",
+      "title": "string",
+      "updated": "string",
+      "url": "string",
+      "version": "number"
+    }
+  ],
+  "confluence search": [
+    {
+      "excerpt": "string",
+      "id": "string",
+      "space": "string",
+      "title": "string",
+      "type": "string",
+      "updated": "string",
+      "url": "string"
+    }
+  ],
+  "confluence spaces": [
+    {
+      "id": "string",
+      "key": "string",
+      "name": "string",
+      "status": "string",
+      "type": "string",
+      "url": "string"
+    }
+  ],
   "devices av-signature": [
     {
       "device_id": "string",
@@ -761,6 +805,63 @@
       "query": "string"
     }
   ],
+  "jira issue": {
+    "assignee": "string",
+    "created": "string",
+    "description": "string",
+    "id": "string",
+    "key": "string",
+    "labels": [
+      "string"
+    ],
+    "priority": "string",
+    "project": "string",
+    "reporter": "string",
+    "status": "string",
+    "status_category": "string",
+    "summary": "string",
+    "type": "string",
+    "updated": "string",
+    "url": "string"
+  },
+  "jira issues": [
+    {
+      "assignee": "null | string",
+      "created": "string",
+      "id": "string",
+      "key": "string",
+      "labels": [
+        "string"
+      ],
+      "priority": "string",
+      "project": "string",
+      "reporter": "string",
+      "status": "string",
+      "status_category": "string",
+      "summary": "string",
+      "type": "string",
+      "updated": "string",
+      "url": "string"
+    }
+  ],
+  "jira projects": [
+    {
+      "id": "string",
+      "key": "string",
+      "name": "string",
+      "type": "string",
+      "url": "string"
+    }
+  ],
+  "jira whoami": {
+    "account_id": "string",
+    "active": "boolean",
+    "email": "string",
+    "name": "string",
+    "profile": "string",
+    "site": "string",
+    "time_zone": "string"
+  },
   "keyvault expiry": [
     {
       "attributes": {
@@ -902,6 +1003,45 @@
       "proxy_source": "string"
     }
   },
+  "news message": {
+    "action_by": "string",
+    "body": "string",
+    "category": "string",
+    "ends": "string",
+    "id": "string",
+    "major": "boolean",
+    "services": [
+      "string"
+    ],
+    "severity": "string",
+    "starts": "string",
+    "tags": [
+      "string"
+    ],
+    "title": "string",
+    "updated": "string",
+    "url": "string"
+  },
+  "news messages": [
+    {
+      "action_by": "null | string",
+      "category": "string",
+      "ends": "string",
+      "id": "string",
+      "major": "boolean",
+      "services": [
+        "string"
+      ],
+      "severity": "string",
+      "starts": "string",
+      "tags": [
+        "string"
+      ],
+      "title": "string",
+      "updated": "string",
+      "url": "string"
+    }
+  ],
   "pim active": [
     {
       "area": "string",
@@ -1123,6 +1263,40 @@
     ],
     "scope": "string"
   },
+  "planner add-news": [
+    {
+      "message": "string",
+      "task": "string",
+      "title": "string"
+    }
+  ],
+  "planner buckets": [
+    {
+      "id": "string",
+      "name": "string"
+    }
+  ],
+  "planner plans": [
+    {
+      "created": "string",
+      "id": "string",
+      "owner": "string",
+      "title": "string"
+    }
+  ],
+  "planner tasks": [
+    {
+      "bucket": "string",
+      "bucket_id": "string",
+      "completed": "null | string",
+      "created": "string",
+      "done": "boolean",
+      "due": "null",
+      "id": "string",
+      "percent_complete": "number",
+      "title": "string"
+    }
+  ],
   "profiles": [
     {
       "active": "boolean",
@@ -1202,6 +1376,36 @@
       "severity": "string",
       "status": "string",
       "title": "string"
+    }
+  ],
+  "xdr analyzer": [
+    {
+      "analyzer_version": "string",
+      "errors": "number",
+      "facts": [
+        {
+          "alert": "null | string",
+          "name": "string",
+          "section": "string",
+          "value": "string"
+        }
+      ],
+      "findings": [
+        {
+          "category": "string",
+          "check": "string",
+          "guidance": "null | string",
+          "id": "string",
+          "result": "string",
+          "severity": "string"
+        }
+      ],
+      "host": "string",
+      "informational": "number",
+      "platform": "string",
+      "run_at": "string",
+      "source": "string",
+      "warnings": "number"
     }
   ],
   "xdr detections export": [

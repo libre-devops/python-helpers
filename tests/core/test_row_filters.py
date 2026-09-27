@@ -199,3 +199,18 @@ def test_examples_are_a_few_of_a_columns_values_once_each():
     assert (
         examples(rows, ["Server", "Scheduled Date"], "scheduled date") == "2026-09-25, 2026-09-26"
     )
+
+
+def test_a_day_or_a_span_is_read_as_its_first_and_last_day():
+    from libre_devops_helpers.core.row_filters import day_span
+
+    today = date(2026, 9, 27)
+    assert day_span("today", today=today) == (today, today)
+    assert day_span("29/09/2026", today=today) == (date(2026, 9, 29), date(2026, 9, 29))
+    assert day_span("last 7d", today=today) == (date(2026, 9, 21), today)
+    assert day_span("..2026-09-14", today=today) == (None, date(2026, 9, 14))
+    assert day_span("01/09/2026..14/09/2026", today=today) == (date(2026, 9, 1), date(2026, 9, 14))
+    with pytest.raises(InputError, match="UK or a US date"):
+        day_span("01/02/2026", today=today)
+    with pytest.raises(InputError, match="not a day"):
+        day_span("soon", today=today)

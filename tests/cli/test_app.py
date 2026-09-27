@@ -134,3 +134,12 @@ def test_a_sort_is_for_the_command_it_was_given_to(tmp_path):
     runner.invoke(app, [*config, "config", "path"])
     assert render._Mode.order == ()
     assert render._Mode.distinct == ()
+
+
+def test_a_command_is_named_by_the_words_that_choose_it():
+    from libre_devops_helpers.cli.app import command_name
+
+    assert command_name(["xdr", "analyzer", "result.zip", "-o", "html"]) == "xdr analyzer"
+    assert command_name(["--verbose", "xdr", "incidents", "top", "--today"]) == "xdr incidents top"
+    assert command_name(["results.zip"]) == ""
+    assert command_name([]) == ""

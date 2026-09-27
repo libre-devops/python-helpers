@@ -10,6 +10,9 @@ import json
 from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, unquote, urlsplit
 
+from fakes.atlassian import ENV as ATLASSIAN
+from fakes.atlassian import SITE as ATLASSIAN_SITE
+from fakes.atlassian import FakeSite
 from fakes.automation import FakeAutomation
 from fakes.azcli import account_json, az_runner
 from fakes.detections import rule as detection_rule
@@ -18,6 +21,7 @@ from fakes.ids import CLIENT_ID, SUBSCRIPTION, TENANT
 from fakes.incidents import incident
 from fakes.logicapps import CODE_VIEW
 from fakes.pim import RULES
+from fakes.planner import FakePlanner
 from fakes.servicenow import CLIENT_ID as SERVICENOW_CLIENT
 from fakes.servicenow import (
     CLIENT_SECRET,
@@ -67,6 +71,8 @@ class Everything:
     def __init__(self) -> None:
         self.automation = FakeAutomation()
         self.instance = FakeInstance()
+        self.site = FakeSite()
+        self.planner = FakePlanner()
         self.requests: list = []
 
     def __call__(self, request):
@@ -76,6 +82,11 @@ class Everything:
         query = {key: values[0] for key, values in parse_qs(parts.query).items()}
         if host == urlsplit(INSTANCE).netloc:
             return self.instance(request)
+        if host == urlsplit(ATLASSIAN_SITE).netloc:
+            return self.site(request)
+        planner_paths = ("/v1.0/admin/serviceAnnouncement", "/v1.0/me/planner", "/v1.0/planner/")
+        if host == "graph.microsoft.com" and path.startswith(planner_paths):
+            return self.planner(request)
         if host == "login.microsoftonline.com":
             token = make_jwt(graph_claims(appid=CLIENT_ID))
             return (200, {"access_token": token, "expires_in": 3600})
@@ -623,7 +634,7 @@ def azure_cli(args: list[str]) -> tuple[int, str, str]:
 
 
 def invoke(config_file, tenant: Everything, args, *, stdin=None):
-    """Run a command against ``tenant``, with ServiceNow's env profile set up as well."""
+    """Run a command against ``tenant``, with ServiceNow's and Atlassian's env profiles set up."""
     obj = Runtime(
         config_path=config_file,
         token_store=MemoryStore(),
@@ -631,7 +642,7 @@ def invoke(config_file, tenant: Everything, args, *, stdin=None):
         open_browser=lambda url: None,
         az_runner=az_runner(azure_cli)[0],
         session=fake_session(tenant)[0],
-        environ=dict(SERVICENOW),
+        environ={**SERVICENOW, **ATLASSIAN},
     )
     obj.interactive = lambda: False
     return runner.invoke(app, args, obj=obj, input=stdin)

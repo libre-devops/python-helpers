@@ -388,3 +388,34 @@ def test_a_service_client_closes_the_session_it_was_given_to_own():
     assert closed == [True]
     client.close()
     assert closed == [True, True]
+
+
+@pytest.mark.parametrize(
+    ("body", "message"),
+    [
+        (
+            {"errorMessages": ["Issue does not exist", "or is hidden"]},
+            "Issue does not exist; or is hidden",
+        ),
+        (
+            {"errors": [{"status": 404, "title": "Not Found", "detail": "no such page"}]},
+            "Not Found: no such page",
+        ),
+        ({"errors": {"summary": "required"}}, "Not Found"),
+    ],
+    ids=["jira", "confluence", "field-errors"],
+)
+def test_atlassians_error_bodies_are_read(body, message):
+    api, _, _ = client(lambda request: (404, body))
+    with pytest.raises(ApiError) as caught:
+        api.get("/x")
+    assert message in str(caught.value)
+
+
+def test_a_hint_can_go_by_status_for_errors_with_no_code():
+    api, _, _ = client(
+        lambda request: (401, {"errorMessages": ["no"]}), error_hints={"HTTP 401": "check it"}
+    )
+    with pytest.raises(ApiError) as caught:
+        api.get("/x")
+    assert caught.value.hint == "check it"

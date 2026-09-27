@@ -18,12 +18,14 @@
 | --- | --- |
 | [Devices](devices.md) | `devices check`, `watch`, `show`, `av-signature` |
 | [Entra ID and Intune](entra.md) | `entra ...`, `intune devices`, tokens |
-| [Defender XDR](defender.md) | `xdr ...`: machines, alerts, vulnerabilities, hunting, incidents |
+| [Defender XDR](defender.md) | `xdr ...`: machines, alerts, vulnerabilities, hunting, incidents, analyzer results |
 | [Microsoft Graph](graph.md) | `graph ...` |
 | [Azure, Key Vault and Log Analytics](azure.md) | `azure ...`, `keyvault expiry`, `logs query` |
 | [Privileged Identity Management](pim.md) | `pim ...` |
 | [Logic Apps](logic-apps.md) | `logicapp ...` |
 | [ServiceNow](servicenow.md) | `snow ...` |
+| [Jira and Confluence](atlassian.md) | `jira ...`, `confluence ...` |
+| [Message Center and Planner](message-center.md) | `news ...`, `planner ...` |
 
 ## Working on it
 

@@ -28,6 +28,12 @@ GRAPH_ERROR_HINTS = {
         "Global Reader), and the signed-in user has none of them active: activate one with "
         "PIM if it is eligible"
     ),
+    # Planner, To Do and others answer it when the service is not on in the tenant.
+    "TenantDisabled": (
+        "the service this calls is not available in the tenant, usually for want of a "
+        "licence that includes it (Planner needs a Microsoft 365 licence with Planner), "
+        "whatever the token's scopes"
+    ),
 }
 
 

@@ -14,6 +14,8 @@ DISTRIBUTION = "libre-devops-helpers"
 ENV_PREFIX = "LDO"
 CONFIG_DIR = "ldo"
 REPOSITORY = "https://github.com/libre-devops/python-helpers"
+# The colour of the -o html page's header, as #RRGGBB.
+ACCENT = "#1E3A8A"
 
 # The welcome banner, drawn after the Libre DevOps unicorn. Plain ASCII, so it renders in
 # any terminal and font. 'just rebrand --banner FILE' swaps it; --no-banner empties it.

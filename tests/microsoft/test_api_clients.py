@@ -44,9 +44,10 @@ def test_a_resource_manager_client_asks_for_tokens_with_the_trailing_slash():
     [
         ("Authentication_RequestFromNonPremiumTenantOrB2CTenant", "Entra ID P1 or P2 licence"),
         ("Authentication_RequestFromUnsupportedUserRole", "Reports Reader, Security Reader"),
+        ("TenantDisabled", "not available in the tenant"),
         ("Forbidden", "lacks the permission this call needs"),
     ],
-    ids=["licence", "role", "other"],
+    ids=["licence", "role", "service-off", "other"],
 )
 def test_graphs_licence_and_role_refusals_say_which_they_are(code, hint):
     session, _ = fake_session(lambda request: (403, {"error": {"code": code, "message": "no"}}))

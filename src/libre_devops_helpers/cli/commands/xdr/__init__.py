@@ -2,13 +2,14 @@
 
 Each part adds its own commands to ``xdr_app``: machines.py (``machines``, ``stale``),
 findings.py (``alerts``, ``vulns``, ``indicators``), hunting.py (``hunt``,
-``timeline``) and detections.py (``detections list``, ``show`` and ``export``). The
-incident commands join them from incidents.py.
+``timeline``), detections.py (``detections list``, ``show`` and ``export``) and
+analyzer.py (``analyzer``, for MDE Client Analyzer results). The incident commands join
+them from incidents.py.
 """
 
 import typer
 
-from libre_devops_helpers.cli.commands.xdr import detections, findings, hunting, machines
+from libre_devops_helpers.cli.commands.xdr import analyzer, detections, findings, hunting, machines
 
 xdr_app = typer.Typer(
     rich_markup_mode="markdown",
@@ -22,6 +23,7 @@ machines.register(xdr_app)
 findings.register(xdr_app)
 hunting.register(xdr_app)
 detections.register(xdr_app)
+analyzer.register(xdr_app)
 
 
 def register(app: typer.Typer) -> None:

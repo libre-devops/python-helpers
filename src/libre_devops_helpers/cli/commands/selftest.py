@@ -137,8 +137,13 @@ CASES = (
     Case(("pim", "eligible", "--azure")),
     Case(("pim", "active", "--azure")),
     Case(("pim", "eligible")),
+    Case(("news", "messages", "--since", "7d", "--limit", "5")),
+    Case(("planner", "plans")),
     Case(("snow", "whoami"), ("snow",)),
     Case(("snow", "instance"), ("snow",)),
+    Case(("jira", "whoami"), ("atlassian",)),
+    Case(("jira", "projects"), ("atlassian",)),
+    Case(("confluence", "spaces"), ("atlassian",)),
 )
 
 
@@ -169,6 +174,9 @@ def self_test(
     ] = None,
     snow: Annotated[
         bool, typer.Option("--snow", help="Also test the ServiceNow commands.")
+    ] = False,
+    atlassian: Annotated[
+        bool, typer.Option("--atlassian", help="Also test the Jira and Confluence commands.")
     ] = False,
     everything: Annotated[
         bool, typer.Option("--all", help="Also run the slow ones (whole-tenant listings).")
@@ -203,6 +211,7 @@ def self_test(
         "workspace": workspace,
         "vault": vault,
         "snow": "yes" if snow else None,
+        "atlassian": "yes" if atlassian else None,
     }
     chosen = [
         case
@@ -318,6 +327,7 @@ _NAME_OPTIONS = {
     "workspace": "--workspace",
     "vault": "--vault",
     "snow": "--snow",
+    "atlassian": "--atlassian",
 }
 
 

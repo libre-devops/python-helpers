@@ -60,7 +60,7 @@ top-level `proxy`, `no_proxy` and `ca_bundle` apply to every call, and to the Az
 | Option | Meaning |
 | --- | --- |
 | `-p`, `--profile` | The profile, or `LDO_PROFILE`. Without it: the section's `default_profile`, then (for Microsoft) the Azure CLI's active account. |
-| `-o`, `--output` | `table` (the default), `json` (the services' full records, for `jq`), `csv` (with a header, for spreadsheets) or `tsv` (values only, no header, as `az -o tsv`, for `cut` and `while read`). Data goes to stdout; notes and progress to stderr, so `-o csv > file.csv` writes a clean file. |
+| `-o`, `--output` | `table` (the default), `json` (the services' full records, for `jq`), `csv` (with a header, for spreadsheets) `tsv` (values only, no header, as `az -o tsv`, for `cut` and `while read`) or `html` (a page to open or share: see [HTML reports](#html-reports)). Data goes to stdout; notes and progress to stderr, so `-o csv > file.csv` writes a clean file. |
 | `--sort COLUMN[:desc]` | Sort the rows by a column, named as the table heads it (case, spaces and underscores do not matter: `"last seen"`, `last_seen`). Repeat it to sort by more, most significant first. Numbers, versions, severities (`Low` to `Critical`) and dates sort as such, and blanks go last either way. On every list, for the table, CSV and TSV. |
 | `--unique COLUMN` | Keep only the first row for each value of a column, ignoring case; repeat it to keep one of each combination of several. It runs after `--sort`, so `--sort "last seen:desc" --unique device` keeps each device's newest record. For JSON, use `jq`'s `sort_by` and `unique_by`. |
 | `--colour`, `--no-colour` | Colour, or none, whatever the output is (also spelt `--color`, `--no-color`); before the command, e.g. `ldo --colour xdr machines web01 \| less -R`. By default colour shows on a terminal, unless `NO_COLOR` is set; `FORCE_COLOR` turns it on. |
@@ -110,6 +110,28 @@ ldo xdr machines -f hosts.txt --sort "last seen:desc" --unique device -o csv > s
 
 **Queries** (`xdr hunt`, `graph hunt`, `azure resource-graph`, `logs query`) come from the
 argument, `--file`, or stdin.
+
+## HTML reports
+
+`-o html` writes any data command's table as a web page: to share in a call, attach to a
+change record, or read more easily than a wide table in a terminal.
+
+```bash
+ldo devices check -f plan.xlsx --column FQDN --where "Scheduled Date=today" -o html
+ldo xdr analyzer results/*.zip -o html > analyzer.html
+ldo azure automation logs aa-ops --runbook Rotate-Keys -o html > rotate-keys.html
+```
+
+In a terminal it writes the page to a file in the current folder, named after the command
+and the time, and opens it in your browser (the path is noted when there is no browser to
+open); redirected, it goes to stdout like any other output. The page has the command that
+made it, counts of the rows that are ok, need attention or failed, the command's notes,
+and the table, whose columns sort with a click, with a filter box and a button to copy the
+rows shown as CSV. It follows your light or dark setting, and prints cleanly.
+
+Everything is in the one file: no font, style or script is fetched, so it opens offline or
+from an email, and its content security policy lets it load nothing and run only its own
+code. It is written only when you ask for it, so no other command is any slower.
 
 ## JSON, YAML and logs
 
@@ -211,6 +233,7 @@ service:
 | `LDO_NO_BANNER`, `NO_COLOR`, `FORCE_COLOR` | No banner; no colour; colour even when piped. The banner only ever shows on a terminal. |
 | `AZURE_CLIENT_SECRET`, `AZURE_FEDERATED_TOKEN_FILE` | For `client-secret` and `workload-identity` profiles, as the Azure SDKs use them. |
 | `SNOW_INSTANCE_URL`, `SNOW_CLIENT_ID`, `SNOW_CLIENT_SECRET`, `SNOW_INSTANCE_USERNAME`, `SNOW_INSTANCE_PASSWORD` | ServiceNow, with or without a config file. |
+| `JIRA_INSTANCE`, `JIRA_EMAIL`, `JIRA_TOKEN`, `LDO_ATLASSIAN_PROFILE` | Jira and Confluence: the site, the account, its API token, and which profile. See [Jira and Confluence](atlassian.md). |
 
 ## Exit codes
 

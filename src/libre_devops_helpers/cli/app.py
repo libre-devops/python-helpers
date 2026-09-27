@@ -5,6 +5,7 @@ subpackages. Library errors are turned into a message and an exit code here,
 and only here.
 """
 
+import shlex
 import sys
 from pathlib import Path
 from typing import Annotated
@@ -18,16 +19,20 @@ from libre_devops_helpers.cli.commands import (
     az,
     azure,
     config,
+    confluence,
     devices,
     entra,
     graph,
     incidents,
     intune,
+    jira,
     keyvault,
     logicapp,
     logs,
     network,
+    news,
     pim,
+    planner,
     pretty,
     profiles,
     selftest,
@@ -123,6 +128,8 @@ def _root(
         ctx.obj.config_path = config_path
     ctx.obj.configure_network()
     ctx.call_on_close(ctx.obj.close)
+    render.begin_report()
+    ctx.call_on_close(render.finish_report)
     if ctx.invoked_subcommand is None:
         # Bare 'ldo': a greeting, then the help.
         render.banner()
@@ -146,6 +153,10 @@ for _module in (
     pim,
     devices,
     snow,
+    jira,
+    confluence,
+    news,
+    planner,
     pretty,
     network,
     selftest,
@@ -159,8 +170,28 @@ incidents.register(xdr.xdr_app)
 automation.register(azure.azure_app)
 
 
+def command_name(arguments: list[str]) -> str:
+    """The command ``arguments`` run, as ``xdr analyzer``: the leading words that name one,
+    past the root's options."""
+    command = typer.main.get_command(app)
+    words: list[str] = []
+    for word in arguments:
+        if word.startswith("-") and not words:
+            continue
+        found = getattr(command, "commands", {}).get(word)
+        if found is None:
+            break
+        command, words = found, [*words, word]
+    return " ".join(words)
+
+
 def main() -> None:
     """Console entry point: run the app and report library errors cleanly."""
+    # The command line as typed, for a page -o html writes (tokens never go on it).
+    arguments = sys.argv[1:]
+    render.begin_report(
+        command=shlex.join([brand.COMMAND, *arguments]), heading=command_name(arguments)
+    )
     try:
         app()
     except LdoError as exc:

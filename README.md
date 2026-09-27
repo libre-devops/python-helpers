@@ -27,7 +27,7 @@
 ---
 
 `ldo` is a fast, read-only command line for day-to-day security and platform work across
-Microsoft (Entra ID, Defender XDR, Intune, Azure, Graph, PIM, Logic Apps) and ServiceNow. It
+Microsoft (Entra ID, Defender XDR, Intune, Azure, Graph, PIM, Logic Apps), ServiceNow, Jira and Confluence. It
 signs in as you, through the Azure CLI by default, and can read only what you can. The Python
 sibling of the [LibreDevOpsHelpers](https://github.com/libre-devops/powershell-helpers)
 PowerShell module, and importable as a library too.
@@ -41,7 +41,7 @@ PowerShell module, and importable as a library too.
 | `ldo devices` | check a list of devices across Entra, Defender and Intune, watch until they are all there, show one, read Defender Antivirus versions | [devices](docs/devices.md) |
 | `ldo entra` | devices and whether they are in a group, users, groups, roles, sign-ins, app credentials, Conditional Access; tokens | [entra](docs/entra.md) |
 | `ldo intune` | managed devices: compliance, last sync, owner | [entra](docs/entra.md) |
-| `ldo xdr` | Defender machines, alerts, vulnerabilities, indicators, Advanced Hunting, a device's timeline, custom detection rules (and their export to YAML) | [defender](docs/defender.md) |
+| `ldo xdr` | Defender machines, alerts, vulnerabilities, indicators, Advanced Hunting, a device's timeline, custom detection rules (and their export to YAML), MDE Client Analyzer results | [defender](docs/defender.md) |
 | `ldo xdr incidents` | the Defender XDR queue, Sentinel's included: top, latest, between days, summary | [defender](docs/defender.md#incidents-sentinels-included) |
 | `ldo graph` | any Graph GET, objects by name, `whoami`, a Graph token, hunting | [graph](docs/graph.md) |
 | `ldo azure` | subscriptions, Resource Graph, role assignments, Defender for Cloud, splitting resource ids into their parts | [azure](docs/azure.md) |
@@ -51,6 +51,10 @@ PowerShell module, and importable as a library too.
 | `ldo pim` | eligible, active and standing access, requests, approvals, activation settings | [pim](docs/pim.md) |
 | `ldo logicapp` | offline checks, export and validation for Consumption Logic Apps and Sentinel playbooks | [logic apps](docs/logic-apps.md) |
 | `ldo snow` | ServiceNow: sign in, whoami, the instance, applications, a token | [servicenow](docs/servicenow.md) |
+| `ldo news` | Microsoft 365 Message Center: posts by date, service (security ones among them) and category, one post as Markdown | [message center](docs/message-center.md) |
+| `ldo planner` | Microsoft Planner: plans, buckets, tasks, and a task for each Message Center post a plan has none for yet | [message center](docs/message-center.md#raising-tasks) |
+| `ldo jira` | Jira Cloud: issues by JQL or project, one issue with its description as Markdown, projects | [atlassian](docs/atlassian.md) |
+| `ldo confluence` | Confluence Cloud: spaces, pages, one page as Markdown, CQL search | [atlassian](docs/atlassian.md) |
 | `ldo az` | switch the Azure CLI between profiles | [signing in](docs/authentication.md) |
 | `ldo network test` | test the way out through a corporate proxy: the proxy, the certificates, each service | [network](docs/network.md) |
 | `ldo json` | pretty-print any JSON (`az rest ... \| ldo json`) in colour, or as YAML | [configuration](docs/configuration.md#json-yaml-and-logs) |
@@ -128,11 +132,18 @@ ldo entra devices -f plan.xlsx --column FQDN --group "Linux pilot"
 ldo azure automation logs aa-ops --runbook Rotate-Keys    # the newest run's logs
 ldo azure resource-graph "resources | summarize count() by type"
 ldo keyvault expiry kv-app-prd --within 30d
+ldo devices check -f plan.xlsx --column FQDN -o html  # any table as a page to open or share
+ldo xdr analyzer MDEClientAnalyzerResult.zip           # what the MDE Client Analyzer found
+ldo news messages --security --since 7d -p me          # this week's Message Center posts for security
+ldo planner add-news "SOC changes" --bucket "To be discussed" --security -p me   # which to raise as tasks
+ldo jira issues --project OPS                          # a Jira project's issues not done
+ldo confluence page 123456 --markdown > runbook.md     # a Confluence page as Markdown
 ```
 
-Incidents, Graph hunting and PIM for Entra roles need scopes the Azure CLI's token never
-has: sign in through [your own app registration](docs/authentication.md#your-own-app-registration)
-for those. [Permissions](docs/permissions.md) lists what each command needs.
+Incidents, Graph hunting, PIM for Entra roles, Message Center and raising Planner tasks need
+scopes the Azure CLI's token never has: sign in through [your own app
+registration](docs/authentication.md#your-own-app-registration) for those (`-p me` above).
+Jira and Confluence read with an [Atlassian API token](docs/atlassian.md#signing-in). [Permissions](docs/permissions.md) lists what each command needs.
 
 ---
 
@@ -141,7 +152,8 @@ for those. [Permissions](docs/permissions.md) lists what each command needs.
 - [Configuration](docs/configuration.md): profiles, common options, environment variables, exit codes
 - [Proxies and certificates](docs/network.md): corporate proxies, cntlm, TLS inspection
 - [Signing in](docs/authentication.md) and [Permissions](docs/permissions.md)
-- [Container images](docs/containers.md)
+- [Container images](docs/containers.md), and [HTML reports](docs/configuration.md#html-reports) of any table
+- [Jira and Confluence](docs/atlassian.md), and [Message Center and Planner](docs/message-center.md)
 - [Using it as a library](docs/library.md) and [Rebranding](docs/rebranding.md) for your organisation
 - [Development](docs/development.md): `just` recipes, tests, CI and releasing
 - [AI.md](AI.md): the instructions for AI coding assistants (Claude Code, Copilot, Codex, Kiro)

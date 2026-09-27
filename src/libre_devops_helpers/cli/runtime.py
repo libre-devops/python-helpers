@@ -22,7 +22,9 @@ from typing import Protocol, TypedDict, TypeVar
 import requests
 import typer
 
+from libre_devops_helpers.atlassian.config import SECTION as ATLASSIAN
 from libre_devops_helpers.cli import render
+from libre_devops_helpers.cli.atlassian_runtime import AtlassianRuntime
 from libre_devops_helpers.cli.servicenow_runtime import ServiceNowRuntime
 from libre_devops_helpers.core import brand, network
 from libre_devops_helpers.core.auth import CachingTokenProvider
@@ -45,13 +47,15 @@ from libre_devops_helpers.microsoft.intune import IntuneClient
 from libre_devops_helpers.microsoft.keyvault import KeyVaultClient
 from libre_devops_helpers.microsoft.loganalytics import LogAnalyticsClient
 from libre_devops_helpers.microsoft.logicapps import LogicAppsClient
+from libre_devops_helpers.microsoft.news import NewsClient
 from libre_devops_helpers.microsoft.pim import AzurePimClient, GraphPimClient
+from libre_devops_helpers.microsoft.planner import PlannerClient
 from libre_devops_helpers.microsoft.process import AzCliError, AzureCliRunner
 from libre_devops_helpers.microsoft.xdr import XdrClient
 from libre_devops_helpers.servicenow.config import SECTION as SERVICENOW
 
 # Every vendor section the config file may hold. Anything else at the top level is a typo.
-SECTIONS = (MICROSOFT, SERVICENOW)
+SECTIONS = (MICROSOFT, SERVICENOW, ATLASSIAN)
 
 
 def _prompt(message: str) -> None:
@@ -136,6 +140,7 @@ class Runtime:
     _file: ConfigFile | None = field(default=None, init=False)
     _microsoft: MicrosoftRuntime | None = field(default=None, init=False)
     _servicenow: ServiceNowRuntime | None = field(default=None, init=False)
+    _atlassian: AtlassianRuntime | None = field(default=None, init=False)
     _closers: list[Callable[[], None]] = field(default_factory=list, init=False)
 
     @property
@@ -151,6 +156,13 @@ class Runtime:
         if self._servicenow is None:
             self._servicenow = ServiceNowRuntime(self)
         return self._servicenow
+
+    @property
+    def atlassian(self) -> AtlassianRuntime:
+        """The Jira and Confluence side of this run, made the first time it is asked for."""
+        if self._atlassian is None:
+            self._atlassian = AtlassianRuntime(self)
+        return self._atlassian
 
     def config_file(self) -> ConfigFile:
         """The config file, loaded once. Raises ConfigNotFoundError when it is absent."""
@@ -336,6 +348,14 @@ class MicrosoftRuntime:
     def intune(self, profile: Profile) -> IntuneClient:
         """An Intune client for ``profile``, closed when the command ends."""
         return self._client(IntuneClient, profile)
+
+    def news(self, profile: Profile) -> NewsClient:
+        """A Message Center client for ``profile``, closed when the command ends."""
+        return self._client(NewsClient, profile)
+
+    def planner(self, profile: Profile) -> PlannerClient:
+        """A Planner client for ``profile``, closed when the command ends."""
+        return self._client(PlannerClient, profile)
 
     def azure(self, profile: Profile) -> AzureClient:
         """An Azure Resource Manager client for ``profile``, closed when the command ends."""

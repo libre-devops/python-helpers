@@ -18,6 +18,7 @@ from typing import Any
 
 import pytest
 
+from fakes.analyzer import write_windows_zip
 from fakes.everything import CONFIG, Everything, invoke
 from fakes.ids import SUBSCRIPTION
 from fakes.logicapps import CODE_VIEW, REFERENCES, dispatcher, write
@@ -48,6 +49,10 @@ COMMANDS: dict[str, list[str]] = {
     "devices check": ["devices", "check", "web01", "--intune", "--group", "Linux servers"],
     "devices show": ["devices", "show", "web01", "--intune"],
     "devices watch": ["devices", "watch", "web01", "--max-passes", "1"],
+    "confluence page": ["confluence", "page", "101"],
+    "confluence pages": ["confluence", "pages", "--space", "OPS"],
+    "confluence search": ["confluence", "search", "type = page"],
+    "confluence spaces": ["confluence", "spaces"],
     "entra app-credentials": ["entra", "app-credentials"],
     "entra ca-policies": ["entra", "ca-policies"],
     "entra device-groups": ["entra", "device-groups", "web01"],
@@ -69,6 +74,10 @@ COMMANDS: dict[str, list[str]] = {
     "graph token": ["graph", "token"],
     "graph whoami": ["graph", "whoami"],
     "intune devices": ["intune", "devices", "web01"],
+    "jira issue": ["jira", "issue", "OPS-1"],
+    "jira issues": ["jira", "issues", "--project", "OPS"],
+    "jira projects": ["jira", "projects"],
+    "jira whoami": ["jira", "whoami"],
     "keyvault expiry": ["keyvault", "expiry", "kv-app"],
     "logicapp check": ["logicapp", "check", "{workflow}"],
     "logicapp connections": ["logicapp", "connections", "{references}"],
@@ -81,10 +90,16 @@ COMMANDS: dict[str, list[str]] = {
     "logs ingestion": ["logs", "ingestion"],
     "logs query": ["logs", "query", "Heartbeat | take 1"],
     "network test": ["network", "test"],
+    "news message": ["news", "message", "MC1000003"],
+    "news messages": ["news", "messages"],
     "pim active": ["pim", "active"],
     "pim approvals": ["pim", "approvals"],
     "pim eligible": ["pim", "eligible"],
     "pim requests": ["pim", "requests"],
+    "planner add-news": ["planner", "add-news", "Operations", "--bucket", "To be discussed"],
+    "planner buckets": ["planner", "buckets", "Operations"],
+    "planner plans": ["planner", "plans"],
+    "planner tasks": ["planner", "tasks", "Operations"],
     "pim settings": ["pim", "settings", "Owner", "--scope", "/subscriptions/{subscription}"],
     "profiles": ["profiles"],
     "snow apps": ["snow", "apps"],
@@ -92,6 +107,7 @@ COMMANDS: dict[str, list[str]] = {
     "snow token": ["snow", "token"],
     "snow whoami": ["snow", "whoami"],
     "xdr alerts": ["xdr", "alerts"],
+    "xdr analyzer": ["xdr", "analyzer", "{analyzer}"],
     "xdr detections export": ["xdr", "detections", "export", "{out}"],
     "xdr detections list": ["xdr", "detections", "list"],
     "xdr detections show": ["xdr", "detections", "show", "7506"],
@@ -184,6 +200,7 @@ def _workflow_files(folder: Path) -> dict[str, object]:
         "references": write(folder, "wired.json", REFERENCES),
         "workflows": tiers,
         "out": folder / "exported",
+        "analyzer": write_windows_zip(folder),
         "subscription": SUBSCRIPTION,
         "subnet": f"{_GROUP}/providers/Microsoft.Network/virtualNetworks/vnet1/subnets/snet-app",
         "lock": "/providers/Microsoft.Authorization/locks/no-delete",

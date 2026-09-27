@@ -105,6 +105,25 @@ class Condition:
     days: Span | None = None
 
 
+def day_span(value: str, *, today: date) -> tuple[date | None, date | None]:
+    """The first and last day ``value`` names, as a ``--where`` date or span would: a day,
+    ``FROM..TO`` (either end None for no limit), or ``last 7d``. A UK or US date that could
+    be either, with nothing to say which, is an InputError asking for ``YYYY-MM-DD``."""
+    span = _value_days(value.strip(), today)
+    if span is None:
+        raise InputError(f"{value!r} is not a day or a span of days", hint=_SPAN_HINT)
+    ends = []
+    for day in (span.start, span.end):
+        read = day.read(span.order) if day is not None else None
+        if day is not None and read is None:
+            raise InputError(
+                f"{value!r} could be a UK or a US date",
+                hint="write it as YYYY-MM-DD, e.g. 2026-09-25",
+            )
+        ends.append(read)
+    return ends[0], ends[1]
+
+
 def parse_conditions(texts: Iterable[str], *, today: date) -> tuple[Condition, ...]:
     """Each ``COLUMN=VALUE`` or ``COLUMN!=VALUE``, with ``today`` for the relative days."""
     return tuple(_condition(text, today) for text in texts)
