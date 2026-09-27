@@ -4,7 +4,12 @@ import pytest
 
 from fakes.terraform import FakeTools
 from libre_devops_helpers.core.errors import CommandError
-from libre_devops_helpers.terraform.tools import format_code, formatter, terraform_docs
+from libre_devops_helpers.terraform.tools import (
+    TERRAFORM_DOCS_HINT,
+    format_code,
+    formatter,
+    terraform_docs,
+)
 
 
 def test_terraform_formats_and_tofu_stands_in_when_it_is_missing():
@@ -32,4 +37,4 @@ def test_terraform_docs_must_be_on_path():
     assert terraform_docs(which=tools.find, runner=tools.run).name == "terraform-docs"
     with pytest.raises(CommandError) as missing:
         terraform_docs(which=FakeTools().find)
-    assert "terraform-docs.io" in missing.value.hint
+    assert missing.value.hint == TERRAFORM_DOCS_HINT

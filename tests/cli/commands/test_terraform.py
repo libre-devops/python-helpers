@@ -3,6 +3,7 @@ import json
 from fakes.tenant import run, usage_error
 from fakes.terraform import GENERATED, HEADER, FakeTools, write_module
 from libre_devops_helpers.core.errors import CommandError, InputError
+from libre_devops_helpers.terraform.tools import TERRAFORM_DOCS_HINT
 
 
 def terraform(config_file, *args, tools=None):
@@ -112,7 +113,7 @@ def test_docs_needs_terraform_docs_and_plain_file_names(config_file, tmp_path):
     missing, _ = terraform(config_file, "docs", str(module))
     assert isinstance(missing.exception, CommandError)
     assert str(missing.exception) == "terraform-docs is not on PATH"
-    assert "terraform-docs.io" in missing.exception.hint
+    assert missing.exception.hint == TERRAFORM_DOCS_HINT
     for option in ("--header", "--readme"):
         bad, _ = terraform(config_file, "docs", str(module), option, "../x.md")
         assert bad.exit_code == 2
