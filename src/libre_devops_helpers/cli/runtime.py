@@ -10,6 +10,8 @@ CLI tool or the network.
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -31,6 +33,7 @@ from libre_devops_helpers.core.auth import CachingTokenProvider
 from libre_devops_helpers.core.browser import can_launch_browser
 from libre_devops_helpers.core.config import ConfigFile, load_config_file
 from libre_devops_helpers.core.errors import ConfigError, ConfigNotFoundError
+from libre_devops_helpers.core.process import Runner
 from libre_devops_helpers.core.token_store import TokenStore
 from libre_devops_helpers.microsoft.auth import credential_for
 from libre_devops_helpers.microsoft.automation import AutomationClient
@@ -100,7 +103,6 @@ class _ProfileClient(Protocol[C_co]):
         session: requests.Session | None,
     ) -> C_co:
         """A client for ``profile``, with its tokens from ``tokens``."""
-        ...
 
 
 class _ClientOptions(TypedDict):
@@ -137,6 +139,9 @@ class Runtime:
     open_browser: Callable[[str], object] = webbrowser.open
     # Tests replace the store a profile's token_cache would open.
     token_store: TokenStore | None = None
+    # How the local tools a command runs (terraform, terraform-docs) are found and run.
+    find_command: Callable[[str], str | None] = shutil.which
+    command_runner: Runner = subprocess.run
     _file: ConfigFile | None = field(default=None, init=False)
     _microsoft: MicrosoftRuntime | None = field(default=None, init=False)
     _servicenow: ServiceNowRuntime | None = field(default=None, init=False)

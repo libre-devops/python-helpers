@@ -22,6 +22,7 @@ from fakes.analyzer import write_windows_zip
 from fakes.everything import CONFIG, Everything, invoke
 from fakes.ids import SUBSCRIPTION
 from fakes.logicapps import CODE_VIEW, REFERENCES, dispatcher, write
+from fakes.terraform import write_module
 from fakes.tokens import graph_claims, make_jwt
 from libre_devops_helpers.core import probe as reach
 from libre_devops_helpers.core.network import Route
@@ -97,6 +98,15 @@ COMMANDS: dict[str, list[str]] = {
     "pim eligible": ["pim", "eligible"],
     "pim requests": ["pim", "requests"],
     "planner add-news": ["planner", "add-news", "Operations", "--bucket", "To be discussed"],
+    "planner add-rollup": [
+        "planner",
+        "add-rollup",
+        "Operations",
+        "--bucket",
+        "To be discussed",
+        "--date",
+        "2026-09-20",
+    ],
     "planner buckets": ["planner", "buckets", "Operations"],
     "planner plans": ["planner", "plans"],
     "planner tasks": ["planner", "tasks", "Operations"],
@@ -108,6 +118,8 @@ COMMANDS: dict[str, list[str]] = {
     "snow whoami": ["snow", "whoami"],
     "xdr alerts": ["xdr", "alerts"],
     "xdr analyzer": ["xdr", "analyzer", "{analyzer}"],
+    "terraform docs": ["terraform", "docs", "{terraform}"],
+    "terraform sort": ["terraform", "sort", "{terraform}"],
     "xdr detections export": ["xdr", "detections", "export", "{out}"],
     "xdr detections list": ["xdr", "detections", "list"],
     "xdr detections show": ["xdr", "detections", "show", "7506"],
@@ -201,6 +213,7 @@ def _workflow_files(folder: Path) -> dict[str, object]:
         "workflows": tiers,
         "out": folder / "exported",
         "analyzer": write_windows_zip(folder),
+        "terraform": write_module(folder / "module"),
         "subscription": SUBSCRIPTION,
         "subnet": f"{_GROUP}/providers/Microsoft.Network/virtualNetworks/vnet1/subnets/snet-app",
         "lock": "/providers/Microsoft.Authorization/locks/no-delete",

@@ -147,8 +147,16 @@ CASES = (
 )
 
 
+class _Registered:
+    """The app self-test was added to, whose commands it runs: kept when it is added, so
+    this module need not import the app, which imports this module."""
+
+    app: typer.Typer | None = None
+
+
 def register(app: typer.Typer) -> None:
     """Add the hidden ``self-test`` command to ``app``."""
+    _Registered.app = app
     app.command("self-test", hidden=True)(self_test)
 
 
@@ -260,8 +268,9 @@ def _run(args: list[str], stdin: str | None, config: Path | None, profile: str |
     """One command, in this process, with its output captured and dropped."""
     from typer.testing import CliRunner
 
-    from libre_devops_helpers.cli.app import app
-
+    app = _Registered.app
+    if app is None:
+        raise RuntimeError("self-test runs its cases through the app it was registered on")
     command = " ".join(args)
     full = [*(["--config", str(config)] if config else []), *args]
     previous = os.environ.get(brand.PROFILE_ENV)

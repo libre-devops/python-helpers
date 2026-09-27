@@ -21,7 +21,7 @@ Microsoft and covers most of `ldo`, but not all of it:
 | `azure ...`, `azure automation ...`, `logicapp export` | ARM | Reader | yes |
 | `news ...` | Graph | `ServiceMessage.Read.All` | no |
 | `planner plans`, `buckets`, `tasks` | Graph | `Tasks.Read`, or `Group.Read.All` for group plans | yes, for group plans |
-| `planner add-news --write` | Graph | `Tasks.ReadWrite` (and `ServiceMessage.Read.All`) | no |
+| `planner add-news --write`, `add-rollup --write` | Graph | `Tasks.ReadWrite` (and `ServiceMessage.Read.All`) | no |
 | `jira ...`, `confluence ...` | Atlassian | an API token, reading what its account may in Jira's and Confluence's own permissions | yes |
 | `xdr analyzer`, `logicapp check`, `diff`, `params` and the others that read files | none: local files | nothing | yes |
 | `logicapp validate` | ARM | `Microsoft.Logic/locations/workflows/validate/action` (Logic App Contributor) | yes |

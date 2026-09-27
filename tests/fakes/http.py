@@ -3,14 +3,25 @@
 import http
 import json
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 from urllib.parse import unquote, urlsplit
 
 import requests
 from requests.adapters import BaseAdapter
 
-# (status, json body) or (status, json body, headers); an Exception is raised instead.
+# (status, body) or (status, body, headers); an Exception is raised instead. A body is JSON,
+# raw bytes, or Text.
 Reply = tuple[int, Any] | tuple[int, Any, dict[str, str]] | Exception
+
+
+@dataclass(frozen=True)
+class Text:
+    """A body that is not JSON, sent with its own content type."""
+
+    content: str
+    content_type: str = "text/plain"
+
 
 Handler = Callable[[requests.PreparedRequest], Reply]
 
@@ -35,8 +46,9 @@ class FakeAdapter(BaseAdapter):
         response = requests.Response()
         response.status_code = status
         response.reason = http.HTTPStatus(status).phrase
-        response._content = body if isinstance(body, bytes) else json.dumps(body).encode()
-        response.headers.update({"Content-Type": "application/json", **(rest[0] if rest else {})})
+        kind = body.content_type if isinstance(body, Text) else "application/json"
+        response._content = _content(body)
+        response.headers.update({"Content-Type": kind, **(rest[0] if rest else {})})
         response.url = request.url
         response.request = request
         response.encoding = "utf-8"
@@ -44,6 +56,12 @@ class FakeAdapter(BaseAdapter):
 
     def close(self) -> None:
         pass
+
+
+def _content(body: Any) -> bytes:
+    if isinstance(body, Text):
+        return body.content.encode()
+    return body if isinstance(body, bytes) else json.dumps(body).encode()
 
 
 def fake_session(handler: Handler) -> tuple[requests.Session, FakeAdapter]:

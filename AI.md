@@ -9,10 +9,12 @@ it, and `.github/copilot-instructions.md` points here.
 
 `ldo` (distribution `libre-devops-helpers`, import `libre_devops_helpers`): a fast, read-only
 CLI and library for Microsoft (Entra ID, Defender XDR, Intune, Azure, Graph, PIM, Logic Apps,
-Automation), ServiceNow, and Atlassian (Jira, Confluence). Its users are people signing in as
-themselves, usually through the Azure CLI; automation is second. Everything reads, apart from
-`ldo az use`, which switches the Azure CLI's account, and `ldo planner add-news --write`,
-which raises Planner tasks. Never add a command that changes a tenant or an instance without
+Automation), ServiceNow, and Atlassian (Jira, Confluence), with helpers for Terraform
+modules. Its users are people signing in as themselves, usually through the Azure CLI;
+automation is second. Everything reads, apart from `ldo az use`, which switches the Azure
+CLI's account, `ldo planner add-news --write` and `add-rollup --write`, which raise and
+update Planner tasks, and `ldo terraform sort` and `docs`, which change a module's own files
+(`--check` only reads). Never add a command that changes a tenant or an instance without
 being asked.
 
 ## Working here
@@ -40,6 +42,8 @@ src/libre_devops_helpers/
   microsoft/devices/    the one composite, using entra, xdr and intune
   servicenow/           the ServiceNow vendor, same shape
   atlassian/            the Atlassian vendor: jira/ and confluence/ on its shared layer
+  terraform/            Terraform modules as files: hcl (blocks), tools (fmt, terraform-docs),
+                        and sort/ and docs/ on them. Local files only
   cli/                  the ldo command: parses, calls a client, renders. No logic here.
                         A command group too big for one file is a package (devices,
                         entra, logicapp, xdr) whose modules each register their own commands.

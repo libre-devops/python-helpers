@@ -224,6 +224,19 @@ def set_picture(root: Path, package: str, text: str) -> None:
     path.write_text(new, encoding="utf-8")
 
 
+ACCENT_LINE = re.compile(r'^ACCENT = "#[0-9A-Fa-f]{6}"$', re.M)
+
+
+def set_accent(root: Path, package: str, colour: str) -> None:
+    """Set the colour of the -o html page's header (brand.ACCENT) to ``colour``, #RRGGBB."""
+    path = root / "src" / package / "core" / "brand.py"
+    source = path.read_text(encoding="utf-8")
+    new, count = ACCENT_LINE.subn(f'ACCENT = "{colour.upper()}"', source)
+    if count != 1:
+        raise SystemExit(f"cannot find the ACCENT line in {path}")
+    path.write_text(new, encoding="utf-8")
+
+
 def verify(root: Path) -> None:
     """Refresh the lock file and environment, then run the same checks as 'just check'."""
     for command in (
@@ -257,6 +270,28 @@ def verify(root: Path) -> None:
 
 def main(argv: list[str] | None = None) -> None:
     """Rename the project to the names given, then prove it still passes its checks."""
+    args = _parser().parse_args(argv)
+    root: Path = args.root
+    old = Brand.load(root / "brand.toml")
+    new = derive(old, args)
+    banner = (
+        args.banner.read_text(encoding="utf-8") if args.banner else "" if args.no_banner else None
+    )
+    drawing = args.banner_picture.read_text(encoding="utf-8") if args.banner_picture else None
+    # Checked before anything is renamed, so a mistyped colour changes nothing.
+    if args.accent is not None and not re.fullmatch(r"#[0-9A-Fa-f]{6}", args.accent):
+        raise SystemExit('the accent must be a colour as #RRGGBB, e.g. "#0F766E"')
+    if new == old and banner is None and drawing is None and args.accent is None:
+        raise SystemExit(
+            "nothing to change: pass at least one new name, a banner, a picture or an accent"
+        )
+    _rename(root, old, new, dry_run=args.dry_run)
+    _decorate(root, new.package, banner, drawing, args.accent, dry_run=args.dry_run)
+    if not args.dry_run and not args.no_verify:
+        verify(root)
+
+
+def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--display-name", help='e.g. "Contoso Helpers"')
     parser.add_argument("--command", help="the CLI command, e.g. contoso")
@@ -273,38 +308,47 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--banner-picture", type=Path, help="a picture drawn above the banner, in colour"
     )
+    parser.add_argument("--accent", help='the -o html page\'s colour, as #RRGGBB, e.g. "#0F766E"')
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parent.parent)
     parser.add_argument("--dry-run", action="store_true", help="show what would change")
     parser.add_argument("--no-verify", action="store_true", help="skip the lock and checks")
-    args = parser.parse_args(argv)
+    return parser
 
-    root: Path = args.root
-    old = Brand.load(root / "brand.toml")
-    new = derive(old, args)
-    banner = (
-        args.banner.read_text(encoding="utf-8") if args.banner else "" if args.no_banner else None
-    )
-    drawing = args.banner_picture.read_text(encoding="utf-8") if args.banner_picture else None
-    if new == old and banner is None and drawing is None:
-        raise SystemExit("nothing to change: pass at least one new name, a banner or a picture")
+
+def _rename(root: Path, old: Brand, new: Brand, *, dry_run: bool) -> None:
+    """Change every name that differs, saying which and where."""
     for field in fields(Brand):
         before, after = getattr(old, field.name), getattr(new, field.name)
         if before != after:
             print(f"{field.name:>13}: {before}  ->  {after}")
-    changed = rebrand(root, old, new, dry_run=args.dry_run) if new != old else []
+    changed = rebrand(root, old, new, dry_run=dry_run) if new != old else []
     for path, count in changed:
         print(f"  {count:4d}  {path}")
-    print(f"{'would change' if args.dry_run else 'changed'} {len(changed)} file(s)")
+    print(f"{'would change' if dry_run else 'changed'} {len(changed)} file(s)")
+
+
+def _decorate(
+    root: Path,
+    package: str,
+    banner: str | None,
+    drawing: str | None,
+    accent: str | None,
+    *,
+    dry_run: bool,
+) -> None:
+    """Set the banner, its picture and the accent colour, each when given."""
     if banner is not None:
         print("   banner: " + ("replaced" if banner.strip() else "removed"))
-        if not args.dry_run:
-            set_banner(root, new.package, banner)
+        if not dry_run:
+            set_banner(root, package, banner)
     if drawing is not None:
         print("  picture: set")
-        if not args.dry_run:
-            set_picture(root, new.package, drawing)
-    if not args.dry_run and not args.no_verify:
-        verify(root)
+        if not dry_run:
+            set_picture(root, package, drawing)
+    if accent is not None:
+        print(f"   accent: {accent}")
+        if not dry_run:
+            set_accent(root, package, accent)
 
 
 if __name__ == "__main__":

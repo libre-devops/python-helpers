@@ -1,7 +1,8 @@
-"""Planner, through Graph: plans, buckets and tasks, and creating a task in a bucket.
+"""Planner, through Graph: plans, buckets and tasks, and creating or updating a task.
 
-Creating a task is the one change this makes, and only when asked: a command offers it
-behind an explicit flag, after showing what it would create.
+Creating a task and changing one's title and description are the only changes this makes,
+and only when asked: a command offers them behind an explicit flag, after showing what it
+would do.
 """
 
 from __future__ import annotations
@@ -9,6 +10,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable, Mapping
 
+from libre_devops_helpers.core import fields
 from libre_devops_helpers.core.errors import AmbiguousError, InputError, NotFoundError
 from libre_devops_helpers.microsoft.api_clients import GraphServiceClient
 from libre_devops_helpers.microsoft.planner.models import Bucket, Plan, Task
@@ -78,10 +80,28 @@ class PlannerClient(GraphServiceClient):
             self._describe(task.id, description)
         return task
 
+    def description(self, task_id: str) -> str:
+        """The task's description: the notes its details hold."""
+        return fields.text(self.api.get(_details(task_id)), "description")
+
+    def update_task(self, task: Task, *, title: str, description: str) -> None:
+        """Give ``task`` this title and description; Planner refuses when the task has
+        changed since it was read (``task.etag``)."""
+        if not title.strip():
+            raise InputError("a task needs a title")
+        self.api.request(
+            "PATCH",
+            f"/v1.0/planner/tasks/{_id(task.id)}",
+            headers={"If-Match": task.etag},
+            json_body={"title": title.strip()[:TITLE_LIMIT]},
+            allow_empty=True,
+        )
+        self._describe(task.id, description)
+
     def _describe(self, task_id: str, description: str) -> None:
         # Planner changes a task's details only with their current etag, which a new task's
         # details have from the moment it is made.
-        path = f"/v1.0/planner/tasks/{_id(task_id)}/details"
+        path = _details(task_id)
         etag = str(self.api.get(path).get("@odata.etag", ""))
         self.api.request(
             "PATCH",
@@ -93,14 +113,19 @@ class PlannerClient(GraphServiceClient):
 
 
 def keyed(tasks: Iterable[Task], key: re.Pattern[str]) -> Mapping[str, Task]:
-    """The tasks whose title starts with a key ``key`` matches (``MC1183010: ...``), by that
-    key: how a plan says which things it has a task for already."""
+    """The tasks whose title holds a key ``key`` finds (``^MC[0-9]+`` for ``MC1183010: ...``),
+    by that key (or by its first group, when it has one): how a plan says which things it has
+    a task for already."""
     found: dict[str, Task] = {}
     for task in tasks:
-        match = key.match(task.title.strip())
+        match = key.search(task.title.strip())
         if match:
-            found.setdefault(match.group(0).upper(), task)
+            found.setdefault(match.group(1 if key.groups else 0).upper(), task)
     return found
+
+
+def _details(task_id: str) -> str:
+    return f"/v1.0/planner/tasks/{_id(task_id)}/details"
 
 
 def _id(value: str) -> str:

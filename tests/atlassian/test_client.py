@@ -3,6 +3,7 @@ import pytest
 from fakes.atlassian import EMAIL, ENV, SITE, FakeSite
 from fakes.http import fake_session
 from libre_devops_helpers.atlassian import ApiToken, AtlassianServiceClient, Profile, token_for
+from libre_devops_helpers.atlassian.client import TOKEN_PAGE
 from libre_devops_helpers.core.errors import ApiError, AuthError
 
 PROFILE = Profile("work", SITE, EMAIL)
@@ -14,7 +15,7 @@ def test_the_token_goes_with_the_email_and_is_never_shown():
     assert repr(credential) == "ApiToken(email='ana@example.com')"
     with pytest.raises(AuthError, match="no Atlassian API token in JIRA_TOKEN") as error:
         token_for(PROFILE, {})
-    assert "id.atlassian.com" in error.value.hint
+    assert error.value.hint == f"create one at {TOKEN_PAGE}, then export JIRA_TOKEN=<token>"
     for email, token in (("", "t"), ("a@example.com", "")):
         with pytest.raises(AuthError):
             ApiToken(email, token)

@@ -1,7 +1,7 @@
 import base64
 import hashlib
-import re
 from datetime import UTC, datetime
+from html.parser import HTMLParser
 
 from libre_devops_helpers.cli import html
 from libre_devops_helpers.core import brand
@@ -33,21 +33,55 @@ def a_page(**changes):
 def test_the_page_stands_alone_and_its_policy_admits_only_its_own_style_and_script():
     page = a_page()
     assert page.startswith("<!doctype html>")
+    parts = Parts()
+    parts.feed(page)
     # Nothing is fetched: no src, no url() or @import, and one link, to the repository.
-    assert " src=" not in page
+    assert parts.sources == []
     assert "url(" not in page
     assert "@import" not in page
-    assert re.findall(r'href="([^"]+)"', page) == [brand.REPOSITORY]
-    style = re.search(r"<style>(.*?)</style>", page, re.S).group(1)
-    script = re.search(r"<script>(.*?)</script>", page, re.S).group(1)
-    policy = re.search(r'Content-Security-Policy" content="([^"]+)"', page).group(1)
+    assert parts.links == [brand.REPOSITORY]
+    assert (len(parts.styles), len(parts.scripts)) == (1, 1)
 
     def digest(text):
         return base64.b64encode(hashlib.sha256(text.encode()).digest()).decode()
 
-    assert f"style-src 'sha256-{digest(style)}'" in policy
-    assert f"script-src 'sha256-{digest(script)}'" in policy
-    assert "default-src 'none'" in policy
+    assert f"style-src 'sha256-{digest(parts.styles[0])}'" in parts.policy
+    assert f"script-src 'sha256-{digest(parts.scripts[0])}'" in parts.policy
+    assert "default-src 'none'" in parts.policy
+
+
+class Parts(HTMLParser):
+    """A page as a browser reads it: the text of each script and style, every link and
+    source it names, whatever the case of its tags, and its content security policy."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.scripts: list[str] = []
+        self.styles: list[str] = []
+        self.links: list[str] = []
+        self.sources: list[str] = []
+        self.policy = ""
+        self._inside: list[str] | None = None
+
+    def handle_starttag(self, tag, attrs):
+        found = dict(attrs)
+        if tag in {"script", "style"}:
+            self._inside = self.scripts if tag == "script" else self.styles
+            self._inside.append("")
+        if "href" in found:
+            self.links.append(found["href"])
+        if "src" in found:
+            self.sources.append(found["src"])
+        if tag == "meta" and found.get("http-equiv") == "Content-Security-Policy":
+            self.policy = found["content"]
+
+    def handle_endtag(self, tag):
+        if tag in {"script", "style"}:
+            self._inside = None
+
+    def handle_data(self, data):
+        if self._inside is not None:
+            self._inside[-1] += data
 
 
 def test_every_value_is_escaped():

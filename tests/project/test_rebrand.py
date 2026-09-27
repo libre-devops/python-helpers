@@ -56,6 +56,8 @@ def rebranded(tmp_path_factory) -> Path:
             str(banner),
             "--banner-picture",
             str(drawing),
+            "--accent",
+            "#0f766e",
             "--no-verify",
         ],
         check=True,
@@ -108,6 +110,26 @@ def test_the_banner_picture_is_set_and_drawn(rebranded):
         [sys.executable, "-c", code], env=environment(rebranded), capture_output=True, text=True
     )
     assert drawn.stdout.strip() == "['@##@']", drawn.stderr
+
+
+def test_the_accent_colours_the_html_page(rebranded):
+    brand = (rebranded / "src" / "quincy_tools" / "core" / "brand.py").read_text(encoding="utf-8")
+    assert 'ACCENT = "#0F766E"' in brand
+
+
+def test_a_mistyped_accent_changes_nothing(rebranded):
+    before = (rebranded / "brand.toml").read_text(encoding="utf-8")
+    script = rebranded / "scripts" / "rebrand.py"
+    arguments = ["--root", str(rebranded), "--command", "other", "--accent", "teal"]
+    refused = subprocess.run(
+        [sys.executable, str(script), *arguments, "--no-verify"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert refused.returncode == 1
+    assert "#RRGGBB" in refused.stderr
+    assert (rebranded / "brand.toml").read_text(encoding="utf-8") == before
 
 
 def test_the_package_moved_and_brand_toml_records_the_new_names(rebranded):

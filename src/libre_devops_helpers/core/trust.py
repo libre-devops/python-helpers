@@ -17,6 +17,7 @@ bundle to use exactly as it is instead, nothing added: the way to opt out.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import logging
 import os
@@ -225,11 +226,11 @@ def write(body: str, folder: Path) -> Path:
 def _prune(folder: Path, *, keep: Path) -> None:
     cutoff = time.time() - _KEEP_OLD_BUNDLES
     for old in folder.glob("ca-bundle-*.pem"):
-        try:
+        # Another run can have removed it, or still have it open on Windows: either way it is
+        # left for the next prune, which is all this tidying is for.
+        with contextlib.suppress(OSError):
             if old != keep and old.stat().st_mtime < cutoff:
                 old.unlink()
-        except OSError:
-            pass
 
 
 class _Resolved:

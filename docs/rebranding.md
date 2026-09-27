@@ -22,6 +22,7 @@ just rebrand --command contoso --display-name "Contoso Helpers" \
 | `--repository` | every link to the repository | unchanged |
 | `--banner`, `--no-banner` | the welcome art (plain ASCII) | unchanged |
 | `--banner-picture` | a picture drawn above it, in its own colours: a logo, say (see below) | none |
+| `--accent` | the colour of an [`-o html`](configuration.md#html-reports) page's header, as `#RRGGBB` | `#1E3A8A` |
 
 The current names live in `brand.toml`, so the rename can run again later, and the running
 tool takes its names from one module (`core/brand.py`). The recipe then relocks and runs every

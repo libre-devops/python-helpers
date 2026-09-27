@@ -60,6 +60,7 @@ class Task:
     due: datetime | None
     created: datetime | None
     completed: datetime | None
+    etag: str = ""  # which version of the task this is: Planner changes one only with it
 
     @property
     def done(self) -> bool:
@@ -79,4 +80,5 @@ class Task:
             due=fields.when(data, "dueDateTime"),
             created=fields.when(data, "createdDateTime"),
             completed=fields.when(data, "completedDateTime"),
+            etag=fields.text(data, "@odata.etag"),
         )

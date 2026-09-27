@@ -248,5 +248,6 @@ def test_a_lock_that_cannot_be_had_says_to_try_again(tmp_path, monkeypatch):
 
 def test_forgetting_what_was_never_kept_creates_nothing(tmp_path):
     path = tmp_path / "state" / "refresh-tokens.json"
-    assert FileStore(path).delete("k") is False
+    deleted = FileStore(path).delete("k")
+    assert deleted is False
     assert not path.parent.exists()

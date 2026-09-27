@@ -21,8 +21,10 @@ SECURITY_SERVICES = (
     "Microsoft Entra",
     "Microsoft Intune",
 )
-# A post's id, as a task's title starts with it once raised for the post.
-MESSAGE_KEY = re.compile(r"MC[0-9]+", re.IGNORECASE)
+# A post's id in a task's title, as the task was raised for the post: at the start, as this
+# raises them (MC1183010: ...), or in square brackets, as Microsoft's own Message Center sync
+# to Planner writes them ([Service] Title [MC1183010]).
+MESSAGE_KEY = re.compile(r"(?:^|(?<=\[))(MC[0-9]+)(?![0-9])", re.IGNORECASE)
 # Graph's categories, and how they read.
 CATEGORIES = {
     "planForChange": "plan for change",

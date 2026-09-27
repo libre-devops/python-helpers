@@ -219,6 +219,7 @@ def peer_issuer(host: str, port: int, proxy: str | None, *, timeout: float = 10.
     None when it cannot be read.
     """
     context = ssl.create_default_context()
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.check_hostname = False
     context.verify_mode = ssl.CERT_NONE  # to read the certificate, not to trust it
     try:

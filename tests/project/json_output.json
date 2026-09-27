@@ -1270,6 +1270,14 @@
       "title": "string"
     }
   ],
+  "planner add-rollup": [
+    {
+      "month": "string",
+      "new": "number",
+      "posts": "number",
+      "task": "string"
+    }
+  ],
   "planner buckets": [
     {
       "id": "string",
@@ -1363,6 +1371,23 @@
       "web_service_access_only": "string"
     }
   },
+  "terraform docs": [
+    {
+      "folder": "string",
+      "header": "string",
+      "readme": "string",
+      "state": "string"
+    }
+  ],
+  "terraform sort": [
+    {
+      "blocks": "string",
+      "count": "number",
+      "file": "string",
+      "in_order": "boolean",
+      "state": "string"
+    }
+  ],
   "xdr alerts": [
     {
       "alertCreationTime": "string",

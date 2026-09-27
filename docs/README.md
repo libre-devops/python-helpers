@@ -26,6 +26,7 @@
 | [ServiceNow](servicenow.md) | `snow ...` |
 | [Jira and Confluence](atlassian.md) | `jira ...`, `confluence ...` |
 | [Message Center and Planner](message-center.md) | `news ...`, `planner ...` |
+| [Terraform modules](terraform.md) | `terraform sort`, `terraform docs` |
 
 ## Working on it
 

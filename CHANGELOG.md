@@ -3,6 +3,34 @@
 All notable changes to libre-devops-helpers are recorded here. The project follows
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- `ldo terraform sort` puts a Terraform module's variables (`variables.tf`, `--inputs`) and
+  outputs (`outputs.tf`, `--outputs`) in name order, as terraform-docs lists them, then runs
+  `terraform fmt` (or `tofu fmt`). It reads blocks as Terraform does, so a `}` in a heredoc
+  or a string never ends one, one-line blocks sort too, and comments above a block move with
+  it while the rest of the file stays as it was. `-r` takes the folders beneath too, and
+  `--check` changes nothing and exits 3 when a file is out of order.
+- `ldo terraform docs` writes a module's README from its `HEADER.md` and terraform-docs
+  (found on `PATH`, with the module's own `.terraform-docs.yml` when it has one); `-r` takes
+  each folder beneath with a `HEADER.md`, and `--check` exits 3 when a README is out of date.
+- `ldo planner add-rollup PLAN --bucket NAME` raises one task a month summing up that month's
+  Message Center posts (`Message Center rollup: 2026-09 (12 messages)`, with the counts by
+  severity, service and category and a line for each post), and brings one the plan has
+  already up to date. Like `add-news`, it only says what it would do without `--write`.
+- `just rebrand --accent "#RRGGBB"` sets the colour of an `-o html` page's header, so a
+  renamed copy's reports carry its own colour.
+
+### Changed
+
+- `ldo planner add-news` raises tasks as Microsoft's own Message Center sync to Planner lays
+  them out: titled `[Service] Title [MC1183010]`, the notes starting with the post's id,
+  published date, category and tags, then its link and text. It counts a task titled that
+  way as the post's, so a board that sync fills gets no second task for a post.
+  `--layout short` raises them as 0.7.0 did (`MC1183010: Title`).
+
 ## 0.7.0
 
 ### Added

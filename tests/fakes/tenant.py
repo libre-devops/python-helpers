@@ -14,6 +14,7 @@ from typer.testing import CliRunner
 from fakes.azcli import account_json, az_runner
 from fakes.http import fake_session
 from fakes.ids import CLIENT_ID, OTHER_TENANT, SUBSCRIPTION, TENANT
+from fakes.terraform import FakeTools
 from fakes.tokens import graph_claims, make_jwt
 from libre_devops_helpers.cli import app
 from libre_devops_helpers.cli.runtime import Runtime
@@ -210,8 +211,10 @@ tenant_id = "{OTHER_TENANT}"
 """
 
 
-def runtime(config_path, handler=None, environ=None) -> Runtime:
+def runtime(config_path, handler=None, environ=None, tools=None) -> Runtime:
+    """A runtime over fakes: ``tools`` (a FakeTools) are the only local tools it finds."""
     session = fake_session(handler)[0] if handler else None
+    tools = tools or FakeTools()
     return Runtime(
         config_path=config_path,
         token_store=MemoryStore(),
@@ -220,16 +223,19 @@ def runtime(config_path, handler=None, environ=None) -> Runtime:
         az_runner=az_runner(az_responder)[0],
         session=session,
         environ=environ or {},
+        find_command=tools.find,
+        command_runner=tools.run,
     )
 
 
-def run(config_path, handler, args, *, stdin=None, environ=None, az=None, confirm=None):
+def run(config_path, handler, args, *, stdin=None, environ=None, az=None, confirm=None, tools=None):
     """Run a command with ``handler`` answering its API calls (see fakes.http.routes).
 
     ``az`` answers Azure CLI calls; ``confirm``, when given, makes the run look like a
-    terminal and answers each yes-or-no question the command asks.
+    terminal and answers each yes-or-no question the command asks; ``tools`` are the local
+    tools on its PATH (none, by default).
     """
-    obj = runtime(config_path, handler, environ)
+    obj = runtime(config_path, handler, environ, tools)
     if az is not None:
         obj.az_runner = az_runner(az)[0]
     if confirm is not None:

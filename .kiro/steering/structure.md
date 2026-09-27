@@ -18,6 +18,8 @@ src/libre_devops_helpers/
   microsoft/devices/    the one composite, using entra, xdr and intune
   servicenow/           the ServiceNow vendor, same shape
   atlassian/            the Atlassian vendor: jira/ and confluence/ on its shared layer
+  terraform/            Terraform modules as files: hcl (blocks), tools (fmt, terraform-docs),
+                        and sort/ and docs/ on them. Local files only
   cli/                  the ldo command: parses, calls a client, renders. No logic here.
                         A command group too big for one file is a package (devices,
                         entra, logicapp, xdr) whose modules each register their own commands.

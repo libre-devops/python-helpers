@@ -101,7 +101,8 @@ def test_ca_bundle_adds_its_certificates_and_must_hold_one(tmp_path):
 def test_the_bundle_file_is_named_by_its_content_and_reused(tmp_path):
     first = trust.write("one\n", tmp_path)
     assert first.name.startswith("ca-bundle-")
-    assert trust.write("one\n", tmp_path) == first
+    again = trust.write("one\n", tmp_path)
+    assert again == first
     second = trust.write("two\n", tmp_path)
     assert second != first
     assert first.exists()  # an old bundle is kept for a week, not removed at once

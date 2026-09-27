@@ -37,6 +37,7 @@ from libre_devops_helpers.cli.commands import (
     profiles,
     selftest,
     snow,
+    terraform,
     token,
     welcome,
     xdr,
@@ -51,7 +52,8 @@ app = typer.Typer(
     rich_markup_mode="markdown",
     name=brand.COMMAND,
     help=f"{brand.DISPLAY_NAME}: fast, read-only helpers for Entra ID, Defender XDR, Intune, "
-    "Azure, Graph, PIM, Logic Apps and ServiceNow. Signs in as you. "
+    "Azure, Graph, PIM, Logic Apps, ServiceNow, Jira and Confluence, and for Terraform modules. "
+    "Signs in as you. "
     f"Docs: {brand.docs('README')}",
     pretty_exceptions_enable=False,
     context_settings={"help_option_names": ["-h", "--help"]},
@@ -157,6 +159,7 @@ for _module in (
     confluence,
     news,
     planner,
+    terraform,
     pretty,
     network,
     selftest,

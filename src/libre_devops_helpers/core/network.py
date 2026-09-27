@@ -164,16 +164,22 @@ def bypassed(host: str, entries: Iterable[str]) -> bool:
         if entry == "*":
             return True
         if "/" in entry and address is not None:
-            try:
-                if address in ipaddress.ip_network(entry, strict=False):
-                    return True
-            except ValueError:
-                pass
+            if _in_network(address, entry):
+                return True
             continue
         entry = _without_port(entry).removeprefix("*").strip(".[]")
         if host == entry or host.endswith("." + entry):
             return True
     return False
+
+
+def _in_network(address: ipaddress.IPv4Address | ipaddress.IPv6Address, entry: str) -> bool:
+    """Whether ``address`` is in the network ``entry`` names (``10.0.0.0/8``): an entry
+    that is not a network, being a typo in no_proxy, names none, as curl reads it."""
+    try:
+        return address in ipaddress.ip_network(entry, strict=False)
+    except ValueError:
+        return False
 
 
 def _without_port(entry: str) -> str:

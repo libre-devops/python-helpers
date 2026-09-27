@@ -1,6 +1,6 @@
 import json
 
-from fakes.atlassian import ENV, FakeSite
+from fakes.atlassian import ENV, SITE, FakeSite
 from fakes.tenant import run
 
 
@@ -13,10 +13,9 @@ def jira(config_file, *args, environ=None):
 def test_whoami_says_the_account_and_site(config_file):
     result = jira(config_file, "whoami")
     assert result.exit_code == 0, result.output
-    assert "https://contoso.atlassian.net" in result.stdout
     assert "Ana" in result.stdout
     record = json.loads(jira(config_file, "whoami", "-o", "json").stdout)
-    assert (record["profile"], record["active"]) == ("env", True)
+    assert (record["profile"], record["site"], record["active"]) == ("env", SITE, True)
 
 
 def test_issues_come_from_a_query_or_a_project(config_file):

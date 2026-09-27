@@ -160,6 +160,7 @@ def serve_once(handle) -> int:
 
 def present_certificate(ca, connection) -> None:
     context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     ca.issue_cert("127.0.0.1", "graph.microsoft.com").configure_cert(context)
     with context.wrap_socket(connection, server_side=True) as tls:
         tls.recv(1)

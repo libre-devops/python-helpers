@@ -40,9 +40,10 @@ VENDORS = {
     ],
     "servicenow": ["instance"],
     "atlassian": ["jira", "confluence"],
+    "terraform": ["sort", "docs"],
 }
 
-SHARED = {"microsoft": ["auth"], "servicenow": [], "atlassian": []}
+SHARED = {"microsoft": ["auth"], "servicenow": [], "atlassian": [], "terraform": []}
 
 COMPOSITES = {"microsoft.devices": {"microsoft.entra", "microsoft.xdr", "microsoft.intune"}}
 

@@ -1,7 +1,8 @@
 """Message Center and Planner over Graph, made up: posts to read, and a plan whose tasks can
-be listed and added to, with Planner's etag check on a task's details."""
+be listed, added to and changed, with Planner's etag checks on a task and its details."""
 
 import json
+import re
 from urllib.parse import parse_qs, unquote, urlsplit
 
 PLAN_ID = "PlanAAAAAAAAAAAAAAAAAAAAAAAA"
@@ -36,6 +37,7 @@ def task(task_id: str, title: str, bucket: str = TO_DISCUSS, percent: int = 0) -
         "dueDateTime": None,
         "createdDateTime": "2026-09-21T10:00:00Z",
         "completedDateTime": "2026-09-22T10:00:00Z" if percent == 100 else None,
+        "@odata.etag": f'W/"task-{task_id}"',
     }
 
 
@@ -97,8 +99,8 @@ class FakePlanner:
         if self.forbid_news:
             return (403, {"error": {"code": "UnknownError", "message": "Forbidden"}})
         if path.endswith("/messages"):
-            found = self.messages
             wanted = query.get("$filter", "")
+            found = [item for item in self.messages if _changed_within(item, wanted)]
             if "isMajorChange eq true" in wanted:
                 found = [item for item in found if item["isMajorChange"]]
             if "category eq 'stayInformed'" in wanted:
@@ -131,9 +133,32 @@ class FakePlanner:
         if path.endswith("/details"):
             task_id = path.split("/")[4]
             if request.method == "GET":
-                return (200, {"@odata.etag": f'W/"etag-{task_id}"', "description": ""})
+                written = self.details.get(task_id, {}).get("description", "")
+                return (200, {"@odata.etag": f'W/"etag-{task_id}"', "description": written})
             if request.headers.get("If-Match") != f'W/"etag-{task_id}"':
                 return (412, {"error": {"code": "PreconditionFailed", "message": "etag"}})
             self.details[task_id] = json.loads(request.body)
             return (204, b"")  # as Graph: no body at all
+        if path.startswith("/v1.0/planner/tasks/") and request.method == "PATCH":
+            return self.change(request, path.rsplit("/", 1)[1])
         raise AssertionError(f"unexpected Planner request {request.method} {path}")
+
+    def change(self, request, task_id: str):
+        found = next(item for item in self.tasks if item["id"] == task_id)
+        if request.headers.get("If-Match") != found["@odata.etag"]:
+            return (412, {"error": {"code": "PreconditionFailed", "message": "etag"}})
+        found.update(json.loads(request.body))
+        found["@odata.etag"] = f'W/"task-{task_id}-changed"'
+        return (204, b"")
+
+
+def _changed_within(item: dict, wanted: str) -> bool:
+    """Whether a post passes the $filter's lastModifiedDateTime span, when it has both ends
+    (as a day or a month does): an open one, such as the last 7 days, comes from the real
+    clock, so is let through for tests that do not depend on today's date. These timestamps
+    all have one form, so they compare as text."""
+    since = re.search(r"lastModifiedDateTime ge (\S+)", wanted)
+    until = re.search(r"lastModifiedDateTime lt (\S+)", wanted)
+    if since is None or until is None:
+        return True
+    return since.group(1) <= item["lastModifiedDateTime"] < until.group(1)

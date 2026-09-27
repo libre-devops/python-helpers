@@ -52,9 +52,10 @@ PowerShell module, and importable as a library too.
 | `ldo logicapp` | offline checks, export and validation for Consumption Logic Apps and Sentinel playbooks | [logic apps](docs/logic-apps.md) |
 | `ldo snow` | ServiceNow: sign in, whoami, the instance, applications, a token | [servicenow](docs/servicenow.md) |
 | `ldo news` | Microsoft 365 Message Center: posts by date, service (security ones among them) and category, one post as Markdown | [message center](docs/message-center.md) |
-| `ldo planner` | Microsoft Planner: plans, buckets, tasks, and a task for each Message Center post a plan has none for yet | [message center](docs/message-center.md#raising-tasks) |
+| `ldo planner` | Microsoft Planner: plans, buckets, tasks, and a task for each Message Center post a plan has none for yet, or one a month summing them up | [message center](docs/message-center.md#raising-tasks) |
 | `ldo jira` | Jira Cloud: issues by JQL or project, one issue with its description as Markdown, projects | [atlassian](docs/atlassian.md) |
 | `ldo confluence` | Confluence Cloud: spaces, pages, one page as Markdown, CQL search | [atlassian](docs/atlassian.md) |
+| `ldo terraform` | a Terraform module's variables and outputs in name order, and its README from HEADER.md and terraform-docs | [terraform](docs/terraform.md) |
 | `ldo az` | switch the Azure CLI between profiles | [signing in](docs/authentication.md) |
 | `ldo network test` | test the way out through a corporate proxy: the proxy, the certificates, each service | [network](docs/network.md) |
 | `ldo json` | pretty-print any JSON (`az rest ... \| ldo json`) in colour, or as YAML | [configuration](docs/configuration.md#json-yaml-and-logs) |
@@ -136,8 +137,10 @@ ldo devices check -f plan.xlsx --column FQDN -o html  # any table as a page to o
 ldo xdr analyzer MDEClientAnalyzerResult.zip           # what the MDE Client Analyzer found
 ldo news messages --security --since 7d -p me          # this week's Message Center posts for security
 ldo planner add-news "SOC changes" --bucket "To be discussed" --security -p me   # which to raise as tasks
+ldo planner add-rollup "SOC changes" --bucket "To be discussed" -p me   # a task summing up the month
 ldo jira issues --project OPS                          # a Jira project's issues not done
 ldo confluence page 123456 --markdown > runbook.md     # a Confluence page as Markdown
+ldo terraform sort -r && ldo terraform docs -r        # a Terraform module's variables, outputs and README
 ```
 
 Incidents, Graph hunting, PIM for Entra roles, Message Center and raising Planner tasks need

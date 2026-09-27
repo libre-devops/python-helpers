@@ -1,6 +1,7 @@
 """``planner``: Microsoft Planner plans and tasks, and raising a task for each Message Center
-post a plan does not have one for yet."""
+post a plan does not have one for yet, or one a month summing them up."""
 
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
 import typer
@@ -25,16 +26,32 @@ from libre_devops_helpers.cli.options import (
     get_runtime,
 )
 from libre_devops_helpers.cli.render import Output
-from libre_devops_helpers.core.markdown import html_to_markdown
-from libre_devops_helpers.microsoft.news import MESSAGE_KEY, Message
-from libre_devops_helpers.microsoft.planner import Bucket, Plan, PlannerClient, Task, keyed
+from libre_devops_helpers.microsoft.news import (
+    MESSAGE_KEY,
+    ROLLUP_TITLE,
+    Layout,
+    Message,
+    Rollup,
+    listed,
+    months,
+    task_notes,
+    task_title,
+)
+from libre_devops_helpers.microsoft.planner import (
+    TITLE_LIMIT,
+    Bucket,
+    Plan,
+    PlannerClient,
+    Task,
+    keyed,
+)
 
-# A task's description holds the post's link and its text, up to this much of it.
-_DESCRIPTION_LIMIT = 6000
+# What a rollup still needs, as a table shows it: the rest are shown green.
+_ROLLUP_TO_DO = frozenset({"to raise", "to update"})
 
 planner_app = typer.Typer(
     rich_markup_mode="markdown",
-    help="Microsoft Planner: plans, buckets and tasks, and a task for each Message Center post.",
+    help="Microsoft Planner: plans, buckets and tasks, and tasks for Message Center posts.",
     no_args_is_help=True,
 )
 
@@ -138,6 +155,16 @@ def add_news(
     security: SecurityOption = False,
     category: CategoryOption = None,
     major: MajorOption = False,
+    layout: Annotated[
+        Layout,
+        typer.Option(
+            "--layout",
+            case_sensitive=False,
+            help="How a task reads. sync: as Microsoft's own Message Center sync to Planner "
+            "writes them, the services, the title and the post's id in brackets, and the "
+            "notes starting with its id, date, category and tags. short: the id, then the title.",
+        ),
+    ] = Layout.SYNC,
     write: Annotated[
         bool, typer.Option("--write", help="Raise the tasks, rather than only say which.")
     ] = False,
@@ -150,7 +177,9 @@ def add_news(
     posts changed in the last 7 days by default.
 
     A post has a task when any task in the plan (in any bucket, done or not) has a title
-    starting with its id: MC1183010: and its title, as these are raised. Without --write
+    holding its id in square brackets, as Microsoft's own Message Center sync writes them
+    and as these are raised, or starting with it (MC1183010: and its title, the short
+    layout). Without --write
     this only says which it would raise. Needs ServiceMessage.Read.All and a Planner scope
     (Tasks.ReadWrite to raise): use a profile with your own app registration. Exits 3
     when there are posts it has not raised a task for.
@@ -169,7 +198,9 @@ def add_news(
         major=major,
     )
     raised = keyed(planner.tasks(chosen.id), MESSAGE_KEY)
-    outcomes = [_raise(planner, chosen, column, item, raised, write=write) for item in found]
+    outcomes = [
+        _raise(planner, chosen, column, item, raised, layout=layout, write=write) for item in found
+    ]
     render.emit(
         output,
         ["MESSAGE", "UPDATED", "TITLE", "TASK"],
@@ -187,6 +218,124 @@ def add_news(
         raise typer.Exit(ATTENTION)
 
 
+@planner_app.command("add-rollup")
+def add_rollup(
+    ctx: typer.Context,
+    plan: PlanArgument,
+    bucket: Annotated[str, typer.Option("--bucket", help="The bucket new rollups go in.")],
+    date: DateOption = None,
+    since: SinceOption = None,
+    service: ServiceOption = None,
+    security: SecurityOption = False,
+    category: CategoryOption = None,
+    major: MajorOption = False,
+    write: Annotated[
+        bool,
+        typer.Option("--write", help="Raise and update the rollups, rather than only say which."),
+    ] = False,
+    profile: ProfileOption = None,
+    sort: SortOption = None,
+    unique: UniqueOption = None,
+    output: OutputOption = Output.TABLE,
+) -> None:
+    """A task for each month's Message Center posts, summing them all up, in one bucket: the
+    months the last 7 days fall in by default.
+
+    A month's rollup lists every post last changed in that month (the whole month, not only
+    the days asked for) and counts them by severity, service and category. Its title is
+    Message Center rollup: 2026-09 and how many posts. A month the plan has a rollup for
+    already (in any bucket, done or not) has it brought up to date instead, its progress
+    left as it is. Without --write this only says what it would do. Needs what add-news
+    does. Exits 3 when a rollup is to raise or to update.
+    """
+    runtime = get_runtime(ctx).microsoft
+    selected = runtime.profile(profile)
+    planner = runtime.planner(selected)
+    chosen = planner.plan(plan)
+    column = planner.bucket(chosen.id, bucket)
+    start, end, _ = window(date, since, "7d")
+    if start is None:
+        raise typer.BadParameter(
+            "give the first day, as in --date 2026-06-01..", param_hint="--date"
+        )
+    news = runtime.news(selected)
+    wanted = services(service, security)
+    rollups = []
+    for month, first, after in months(start, end or datetime.now(UTC)):
+        found = news.messages(
+            since=first, until=after, services=wanted, category=category, major=major
+        )
+        if found:
+            rollups.append(Rollup(month, tuple(found)))
+    existing = keyed(planner.tasks(chosen.id), ROLLUP_TITLE)
+    outcomes = [
+        _roll(planner, chosen, column, rollup, existing.get(rollup.month), write=write)
+        for rollup in rollups
+    ]
+    render.emit(
+        output,
+        ["MONTH", "POSTS", "NEW", "TASK"],
+        [
+            [rollup.month, str(len(rollup.messages)), str(new), _rollup_cell(state)]
+            for rollup, (state, new) in zip(rollups, outcomes, strict=True)
+        ],
+        [
+            {"month": rollup.month, "posts": len(rollup.messages), "new": new, "task": state}
+            for rollup, (state, new) in zip(rollups, outcomes, strict=True)
+        ],
+    )
+    states = [state for state, _ in outcomes]
+    render.note(_rollup_summary(states, f"{chosen.title} / {column.name}", write=write))
+    if _ROLLUP_TO_DO.intersection(states):
+        raise typer.Exit(ATTENTION)
+
+
+def _roll(
+    planner: PlannerClient,
+    plan: Plan,
+    bucket: Bucket,
+    rollup: Rollup,
+    task: Task | None,
+    *,
+    write: bool,
+) -> tuple[str, int]:
+    """What happened to one month's rollup, and how many of its posts it did not list."""
+    if task is None:
+        if write:
+            planner.create_task(plan.id, bucket.id, rollup.title, description=rollup.description)
+        return ("raised" if write else "to raise"), len(rollup.messages)
+    current = planner.description(task.id)
+    new = len(rollup.ids - listed(current))
+    rollup = rollup.keeping(current)
+    if task.title == rollup.title and current.strip() == rollup.description.strip():
+        return "up to date", new
+    if write:
+        planner.update_task(task, title=rollup.title, description=rollup.description)
+    return ("updated" if write else "to update"), new
+
+
+def _rollup_cell(state: str) -> render.Cell:
+    return (state, "yellow" if state in _ROLLUP_TO_DO else "green")
+
+
+def _rollup_summary(states: list[str], where: str, *, write: bool) -> str:
+    counts = {state: states.count(state) for state in _ROLLUP_STATES}
+    if not states:
+        return f"no posts in those months, so no rollup for {where}"
+    if write:
+        return (
+            f"raised {counts['raised']} and updated {counts['updated']} rollup(s) in {where}; "
+            f"{counts['up to date']} up to date"
+        )
+    return (
+        f"{counts['to raise']} to raise and {counts['to update']} to update in {where}, "
+        f"{counts['up to date']} up to date (--write makes the changes)"
+    )
+
+
+_ROLLUP_STATES = ("to raise", "raised", "to update", "updated", "up to date")
+
+
 def _raise(
     planner: PlannerClient,
     plan: Plan,
@@ -194,6 +343,7 @@ def _raise(
     message: Message,
     raised: dict[str, Task] | Any,
     *,
+    layout: Layout,
     write: bool,
 ) -> tuple[render.Cell, str]:
     """What happened to one post: it has a task already, it is to raise, or it was raised."""
@@ -201,15 +351,9 @@ def _raise(
         return ("raised already", "green"), "raised already"
     if not write:
         return ("to raise", "yellow"), "to raise"
-    planner.create_task(plan.id, bucket.id, message.task_title, description=_description(message))
+    title = task_title(message, layout, limit=TITLE_LIMIT)
+    planner.create_task(plan.id, bucket.id, title, description=task_notes(message, layout))
     return ("raised", "green"), "raised"
-
-
-def _description(message: Message) -> str:
-    body = html_to_markdown(message.body_html).strip() if message.body_html else ""
-    if len(body) > _DESCRIPTION_LIMIT:
-        body = body[:_DESCRIPTION_LIMIT].rstrip() + "\n\n(more in the admin centre)"
-    return f"{message.url}\n\n{body}".strip()
 
 
 def _summarise(states: list[str], plan: Plan, bucket: Bucket, said: str, *, write: bool) -> None:

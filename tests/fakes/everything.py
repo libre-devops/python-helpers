@@ -31,6 +31,7 @@ from fakes.servicenow import (
     FakeInstance,
 )
 from fakes.tenant import az_responder, runner
+from fakes.terraform import FakeTools
 from fakes.tokens import graph_claims, make_jwt
 from libre_devops_helpers.cli import app
 from libre_devops_helpers.cli.runtime import Runtime
@@ -260,7 +261,7 @@ class Everything:
         if path == f"{workflows}/orders":
             return (200, _workflow())
         if path.endswith("/validate"):
-            return (200, b"", {"Content-Type": "application/json"})
+            return (200, b"")
         raise AssertionError(f"unexpected Logic Apps path {path}")
 
     # Log Analytics and Key Vault -----------------------------------------------------------
@@ -633,6 +634,10 @@ def azure_cli(args: list[str]) -> tuple[int, str, str]:
     return az_responder(args)
 
 
+# The local tools a terraform command finds: terraform and terraform-docs, faked.
+TOOLS = FakeTools("terraform", "terraform-docs")
+
+
 def invoke(config_file, tenant: Everything, args, *, stdin=None):
     """Run a command against ``tenant``, with ServiceNow's and Atlassian's env profiles set up."""
     obj = Runtime(
@@ -643,6 +648,8 @@ def invoke(config_file, tenant: Everything, args, *, stdin=None):
         az_runner=az_runner(azure_cli)[0],
         session=fake_session(tenant)[0],
         environ={**SERVICENOW, **ATLASSIAN},
+        find_command=TOOLS.find,
+        command_runner=TOOLS.run,
     )
     obj.interactive = lambda: False
     return runner.invoke(app, args, obj=obj, input=stdin)

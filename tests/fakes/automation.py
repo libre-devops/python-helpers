@@ -3,6 +3,7 @@
 from datetime import UTC, datetime, timedelta
 from urllib.parse import unquote, urlsplit
 
+from fakes.http import Text
 from fakes.ids import OTHER_SUBSCRIPTION, SUBSCRIPTION, TENANT
 
 PROVIDER = "providers/Microsoft.Automation/automationAccounts"
@@ -120,7 +121,7 @@ class FakeAutomation:
                 detailed = {**found["properties"], **self.details.get(job_id, {})}
                 return (200, {**found, "properties": detailed})
             if rest == "output":
-                return (200, self.outputs.get(job_id, "").encode(), {"Content-Type": "text/plain"})
+                return (200, Text(self.outputs.get(job_id, "")))
             if rest == "streams":
                 return (200, {"value": self.streams[job_id]})
             if rest.startswith("streams/"):

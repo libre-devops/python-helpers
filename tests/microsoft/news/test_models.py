@@ -14,6 +14,8 @@ def test_a_post_reads_every_field_and_says_where_it_is():
     assert found.task_title == "MC1000003: Sentinel"
     assert found.for_any(["defender"])
     assert not found.for_any(["teams"])
-    assert MESSAGE_KEY.match("mc1000003: anything").group(0) == "mc1000003"
+    assert MESSAGE_KEY.search("mc1000003: anything").group(1) == "mc1000003"
+    assert MESSAGE_KEY.search("[Microsoft Sentinel] Sentinel [MC1000003]").group(1) == "MC1000003"
+    assert MESSAGE_KEY.search("Before MC1000003 is read") is None
     bare = Message.from_json({"id": "MC1"})
     assert (bare.services, bare.major, bare.body_html, bare.category_label) == ((), False, "", "")

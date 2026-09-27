@@ -14,7 +14,8 @@ def test_every_python_stage_is_one_pinned_base():
     # be the same Python; a partial base image bump would break that quietly.
     pythons = {image for image in stages().values() if "library/python:" in image}
     assert len(pythons) == 1, pythons
-    assert "@sha256:" in pythons.pop()
+    (python,) = pythons
+    assert "@sha256:" in python
 
 
 def test_the_azure_cli_is_compiled_on_the_build_platform_and_shipped_compiled():
